@@ -16,6 +16,7 @@ import { Route as OnboardingRouteImport } from './routes/onboarding'
 import { Route as AppIndexRouteImport } from './routes/app.index'
 import { Route as AppProspectarRouteImport } from './routes/app.prospectar'
 import { Route as AppLeadsIndexRouteImport } from './routes/app.leads.index'
+import { Route as AppLeadsIdRouteImport } from './routes/app.leads.$id'
 
 const IndexRoute = IndexRouteImport.update({
   id: '/',
@@ -52,6 +53,11 @@ const AppLeadsIndexRoute = AppLeadsIndexRouteImport.update({
   path: '/leads/',
   getParentRoute: () => AppRoute,
 } as any)
+const AppLeadsIdRoute = AppLeadsIdRouteImport.update({
+  id: '/leads/$id',
+  path: '/leads/$id',
+  getParentRoute: () => AppRoute,
+} as any)
 
 export interface FileRoutesByFullPath {
   '/': typeof IndexRoute
@@ -60,6 +66,7 @@ export interface FileRoutesByFullPath {
   '/onboarding': typeof OnboardingRoute
   '/app/prospectar': typeof AppProspectarRoute
   '/app/': typeof AppIndexRoute
+  '/app/leads/$id': typeof AppLeadsIdRoute
   '/app/leads/': typeof AppLeadsIndexRoute
 }
 export interface FileRoutesByTo {
@@ -68,6 +75,7 @@ export interface FileRoutesByTo {
   '/onboarding': typeof OnboardingRoute
   '/app/prospectar': typeof AppProspectarRoute
   '/app': typeof AppIndexRoute
+  '/app/leads/$id': typeof AppLeadsIdRoute
   '/app/leads': typeof AppLeadsIndexRoute
 }
 export interface FileRoutesById {
@@ -78,6 +86,7 @@ export interface FileRoutesById {
   '/onboarding': typeof OnboardingRoute
   '/app/prospectar': typeof AppProspectarRoute
   '/app/': typeof AppIndexRoute
+  '/app/leads/$id': typeof AppLeadsIdRoute
   '/app/leads/': typeof AppLeadsIndexRoute
 }
 export interface FileRouteTypes {
@@ -89,9 +98,17 @@ export interface FileRouteTypes {
     | '/onboarding'
     | '/app/prospectar'
     | '/app/'
+    | '/app/leads/$id'
     | '/app/leads/'
   fileRoutesByTo: FileRoutesByTo
-  to: '/' | '/auth' | '/onboarding' | '/app/prospectar' | '/app' | '/app/leads'
+  to:
+    | '/'
+    | '/auth'
+    | '/onboarding'
+    | '/app/prospectar'
+    | '/app'
+    | '/app/leads/$id'
+    | '/app/leads'
   id:
     | '__root__'
     | '/'
@@ -100,6 +117,7 @@ export interface FileRouteTypes {
     | '/onboarding'
     | '/app/prospectar'
     | '/app/'
+    | '/app/leads/$id'
     | '/app/leads/'
   fileRoutesById: FileRoutesById
 }
@@ -161,18 +179,27 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof AppLeadsIndexRouteImport
       parentRoute: typeof AppRoute
     }
+    '/app/leads/$id': {
+      id: '/app/leads/$id'
+      path: '/leads/$id'
+      fullPath: '/app/leads/$id'
+      preLoaderRoute: typeof AppLeadsIdRouteImport
+      parentRoute: typeof AppRoute
+    }
   }
 }
 
 interface AppRouteChildren {
   AppProspectarRoute: typeof AppProspectarRoute
   AppIndexRoute: typeof AppIndexRoute
+  AppLeadsIdRoute: typeof AppLeadsIdRoute
   AppLeadsIndexRoute: typeof AppLeadsIndexRoute
 }
 
 const AppRouteChildren: AppRouteChildren = {
   AppProspectarRoute: AppProspectarRoute,
   AppIndexRoute: AppIndexRoute,
+  AppLeadsIdRoute: AppLeadsIdRoute,
   AppLeadsIndexRoute: AppLeadsIndexRoute,
 }
 
