@@ -27,7 +27,7 @@ export function Nav() {
             <Link to="/auth">Entrar</Link>
           </Button>
           <Button variant="gold" size="sm" asChild>
-            <Link to="/auth" search={{ mode: "signup" }}>Começar agora</Link>
+            <Link to="/auth">Começar agora</Link>
           </Button>
         </div>
       </nav>
