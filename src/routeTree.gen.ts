@@ -17,6 +17,7 @@ import { Route as AppIndexRouteImport } from './routes/app.index'
 import { Route as AppCampanhasRouteImport } from './routes/app.campanhas'
 import { Route as AppPipelineRouteImport } from './routes/app.pipeline'
 import { Route as AppProspectarRouteImport } from './routes/app.prospectar'
+import { Route as AppSitesRouteImport } from './routes/app.sites'
 import { Route as AppLeadsIndexRouteImport } from './routes/app.leads.index'
 import { Route as AppLeadsIdRouteImport } from './routes/app.leads.$id'
 
@@ -60,6 +61,11 @@ const AppProspectarRoute = AppProspectarRouteImport.update({
   path: '/prospectar',
   getParentRoute: () => AppRoute,
 } as any)
+const AppSitesRoute = AppSitesRouteImport.update({
+  id: '/sites',
+  path: '/sites',
+  getParentRoute: () => AppRoute,
+} as any)
 const AppLeadsIndexRoute = AppLeadsIndexRouteImport.update({
   id: '/leads/',
   path: '/leads/',
@@ -79,6 +85,7 @@ export interface FileRoutesByFullPath {
   '/app/campanhas': typeof AppCampanhasRoute
   '/app/pipeline': typeof AppPipelineRoute
   '/app/prospectar': typeof AppProspectarRoute
+  '/app/sites': typeof AppSitesRoute
   '/app/': typeof AppIndexRoute
   '/app/leads/$id': typeof AppLeadsIdRoute
   '/app/leads/': typeof AppLeadsIndexRoute
@@ -90,6 +97,7 @@ export interface FileRoutesByTo {
   '/app/campanhas': typeof AppCampanhasRoute
   '/app/pipeline': typeof AppPipelineRoute
   '/app/prospectar': typeof AppProspectarRoute
+  '/app/sites': typeof AppSitesRoute
   '/app': typeof AppIndexRoute
   '/app/leads/$id': typeof AppLeadsIdRoute
   '/app/leads': typeof AppLeadsIndexRoute
@@ -103,6 +111,7 @@ export interface FileRoutesById {
   '/app/campanhas': typeof AppCampanhasRoute
   '/app/pipeline': typeof AppPipelineRoute
   '/app/prospectar': typeof AppProspectarRoute
+  '/app/sites': typeof AppSitesRoute
   '/app/': typeof AppIndexRoute
   '/app/leads/$id': typeof AppLeadsIdRoute
   '/app/leads/': typeof AppLeadsIndexRoute
@@ -117,6 +126,7 @@ export interface FileRouteTypes {
     | '/app/campanhas'
     | '/app/pipeline'
     | '/app/prospectar'
+    | '/app/sites'
     | '/app/'
     | '/app/leads/$id'
     | '/app/leads/'
@@ -128,6 +138,7 @@ export interface FileRouteTypes {
     | '/app/campanhas'
     | '/app/pipeline'
     | '/app/prospectar'
+    | '/app/sites'
     | '/app'
     | '/app/leads/$id'
     | '/app/leads'
@@ -140,6 +151,7 @@ export interface FileRouteTypes {
     | '/app/campanhas'
     | '/app/pipeline'
     | '/app/prospectar'
+    | '/app/sites'
     | '/app/'
     | '/app/leads/$id'
     | '/app/leads/'
@@ -210,6 +222,13 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof AppProspectarRouteImport
       parentRoute: typeof AppRoute
     }
+    '/app/sites': {
+      id: '/app/sites'
+      path: '/sites'
+      fullPath: '/app/sites'
+      preLoaderRoute: typeof AppSitesRouteImport
+      parentRoute: typeof AppRoute
+    }
     '/app/leads/': {
       id: '/app/leads/'
       path: '/leads'
@@ -231,6 +250,7 @@ interface AppRouteChildren {
   AppCampanhasRoute: typeof AppCampanhasRoute
   AppPipelineRoute: typeof AppPipelineRoute
   AppProspectarRoute: typeof AppProspectarRoute
+  AppSitesRoute: typeof AppSitesRoute
   AppIndexRoute: typeof AppIndexRoute
   AppLeadsIdRoute: typeof AppLeadsIdRoute
   AppLeadsIndexRoute: typeof AppLeadsIndexRoute
@@ -240,6 +260,7 @@ const AppRouteChildren: AppRouteChildren = {
   AppCampanhasRoute: AppCampanhasRoute,
   AppPipelineRoute: AppPipelineRoute,
   AppProspectarRoute: AppProspectarRoute,
+  AppSitesRoute: AppSitesRoute,
   AppIndexRoute: AppIndexRoute,
   AppLeadsIdRoute: AppLeadsIdRoute,
   AppLeadsIndexRoute: AppLeadsIndexRoute,
