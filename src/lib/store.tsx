@@ -1,4 +1,4 @@
-import { createContext, useCallback, useContext, useEffect, useMemo, useState, type ReactNode } from "react";
+import { createContext, useContext, useEffect, useMemo, useState, type ReactNode } from "react";
 import type { Campaign, Lead, Profile, Stage } from "./types";
 import { generateMessage, generateSiteContent, seedDemo, slugify } from "./mock";
 
@@ -64,15 +64,6 @@ export function StoreProvider({ children }: { children: ReactNode }) {
       /* ignore */
     }
   }, [state, hydrated]);
-
-  const touch = useCallback((id: string, text: string) => {
-    setState((s) => ({
-      ...s,
-      leads: s.leads.map((l) =>
-        l.id === id ? { ...l, activities: [{ at: new Date().toISOString(), text }, ...l.activities] } : l,
-      ),
-    }));
-  }, []);
 
   const value = useMemo<Ctx>(
     () => ({
@@ -151,9 +142,8 @@ export function StoreProvider({ children }: { children: ReactNode }) {
       spend: (n) => setState((s) => ({ ...s, credits: Math.max(0, s.credits - n) })),
       setProfile: (p) => setState((s) => ({ ...s, profile: { ...s.profile, ...p } })),
       reset: () => setState(initialState()),
-      touch,
     }),
-    [state, touch],
+    [state],
   );
 
   return <StoreContext.Provider value={value}>{children}</StoreContext.Provider>;

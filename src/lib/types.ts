@@ -37,7 +37,7 @@ export type LeadSite = {
   template: string;
   content: SiteSection;
   published: boolean;
-  url?: string;
+  url?: string | undefined;
   createdAt: string;
 };
 
@@ -49,16 +49,16 @@ export type Lead = {
   rating: number;
   reviews: number;
   hasWebsite: boolean;
-  website?: string;
-  phone?: string;
-  instagram?: string;
+  website?: string | undefined;
+  phone?: string | undefined;
+  instagram?: string | undefined;
   address: string;
   score: number;
   reasons: ScoreReason[];
   stage: Stage;
-  campaignId?: string;
-  site?: LeadSite;
-  message?: { tone: string; channel: string; text: string };
+  campaignId?: string | undefined;
+  site?: LeadSite | undefined;
+  message?: { tone: string; channel: string; text: string } | undefined;
   createdAt: string;
   activities: { at: string; text: string }[];
 };
