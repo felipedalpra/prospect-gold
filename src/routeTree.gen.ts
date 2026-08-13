@@ -15,6 +15,7 @@ import { Route as AuthRouteImport } from './routes/auth'
 import { Route as OnboardingRouteImport } from './routes/onboarding'
 import { Route as AppIndexRouteImport } from './routes/app.index'
 import { Route as AppCampanhasRouteImport } from './routes/app.campanhas'
+import { Route as AppPipelineRouteImport } from './routes/app.pipeline'
 import { Route as AppProspectarRouteImport } from './routes/app.prospectar'
 import { Route as AppLeadsIndexRouteImport } from './routes/app.leads.index'
 import { Route as AppLeadsIdRouteImport } from './routes/app.leads.$id'
@@ -49,6 +50,11 @@ const AppCampanhasRoute = AppCampanhasRouteImport.update({
   path: '/campanhas',
   getParentRoute: () => AppRoute,
 } as any)
+const AppPipelineRoute = AppPipelineRouteImport.update({
+  id: '/pipeline',
+  path: '/pipeline',
+  getParentRoute: () => AppRoute,
+} as any)
 const AppProspectarRoute = AppProspectarRouteImport.update({
   id: '/prospectar',
   path: '/prospectar',
@@ -71,6 +77,7 @@ export interface FileRoutesByFullPath {
   '/auth': typeof AuthRoute
   '/onboarding': typeof OnboardingRoute
   '/app/campanhas': typeof AppCampanhasRoute
+  '/app/pipeline': typeof AppPipelineRoute
   '/app/prospectar': typeof AppProspectarRoute
   '/app/': typeof AppIndexRoute
   '/app/leads/$id': typeof AppLeadsIdRoute
@@ -81,6 +88,7 @@ export interface FileRoutesByTo {
   '/auth': typeof AuthRoute
   '/onboarding': typeof OnboardingRoute
   '/app/campanhas': typeof AppCampanhasRoute
+  '/app/pipeline': typeof AppPipelineRoute
   '/app/prospectar': typeof AppProspectarRoute
   '/app': typeof AppIndexRoute
   '/app/leads/$id': typeof AppLeadsIdRoute
@@ -93,6 +101,7 @@ export interface FileRoutesById {
   '/auth': typeof AuthRoute
   '/onboarding': typeof OnboardingRoute
   '/app/campanhas': typeof AppCampanhasRoute
+  '/app/pipeline': typeof AppPipelineRoute
   '/app/prospectar': typeof AppProspectarRoute
   '/app/': typeof AppIndexRoute
   '/app/leads/$id': typeof AppLeadsIdRoute
@@ -106,6 +115,7 @@ export interface FileRouteTypes {
     | '/auth'
     | '/onboarding'
     | '/app/campanhas'
+    | '/app/pipeline'
     | '/app/prospectar'
     | '/app/'
     | '/app/leads/$id'
@@ -116,6 +126,7 @@ export interface FileRouteTypes {
     | '/auth'
     | '/onboarding'
     | '/app/campanhas'
+    | '/app/pipeline'
     | '/app/prospectar'
     | '/app'
     | '/app/leads/$id'
@@ -127,6 +138,7 @@ export interface FileRouteTypes {
     | '/auth'
     | '/onboarding'
     | '/app/campanhas'
+    | '/app/pipeline'
     | '/app/prospectar'
     | '/app/'
     | '/app/leads/$id'
@@ -184,6 +196,13 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof AppCampanhasRouteImport
       parentRoute: typeof AppRoute
     }
+    '/app/pipeline': {
+      id: '/app/pipeline'
+      path: '/pipeline'
+      fullPath: '/app/pipeline'
+      preLoaderRoute: typeof AppPipelineRouteImport
+      parentRoute: typeof AppRoute
+    }
     '/app/prospectar': {
       id: '/app/prospectar'
       path: '/prospectar'
@@ -210,6 +229,7 @@ declare module '@tanstack/react-router' {
 
 interface AppRouteChildren {
   AppCampanhasRoute: typeof AppCampanhasRoute
+  AppPipelineRoute: typeof AppPipelineRoute
   AppProspectarRoute: typeof AppProspectarRoute
   AppIndexRoute: typeof AppIndexRoute
   AppLeadsIdRoute: typeof AppLeadsIdRoute
@@ -218,6 +238,7 @@ interface AppRouteChildren {
 
 const AppRouteChildren: AppRouteChildren = {
   AppCampanhasRoute: AppCampanhasRoute,
+  AppPipelineRoute: AppPipelineRoute,
   AppProspectarRoute: AppProspectarRoute,
   AppIndexRoute: AppIndexRoute,
   AppLeadsIdRoute: AppLeadsIdRoute,
