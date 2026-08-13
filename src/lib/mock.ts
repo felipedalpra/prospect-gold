@@ -64,14 +64,14 @@ export const defaultFilters: Filters = {
 
 export function generateLeads(niche: string, location: string, filters: Filters, seedBase = Date.now()): Lead[] {
   const key = categoryKey(niche);
-  const names = PREFIX[key] ?? PREFIX.default;
+  const names = PREFIX[key] ?? PREFIX["default"]!;
   const catLabel = niche.trim() ? niche.trim().replace(/^\w/, (c) => c.toUpperCase()) : "Negócio local";
   const out: Lead[] = [];
   const total = Math.max(4, Math.min(filters.limit, 40));
   for (let i = 0; i < total * 2 && out.length < total; i++) {
     const s = seedBase / 1000 + i * 7.13;
-    const base = names[i % names.length];
-    const name = i < names.length ? base : `${base} ${SUFFIX[i % SUFFIX.length]}`;
+    const base = names[i % names.length]!;
+    const name = i < names.length ? base : `${base} ${SUFFIX[i % SUFFIX.length]!}`;
     const hasWebsite = rand(s) > 0.62;
     const phone = rand(s + 1) > 0.15 ? `(51) 9${Math.floor(rand(s + 2) * 9000 + 1000)}-${Math.floor(rand(s + 3) * 9000 + 1000)}` : undefined;
     const instagram = rand(s + 4) > 0.35 ? `@${base.toLowerCase().replace(/[^a-z]/g, "")}` : undefined;
@@ -94,7 +94,7 @@ export function generateLeads(niche: string, location: string, filters: Filters,
       website: hasWebsite ? `${base.toLowerCase().replace(/[^a-z]/g, "")}.com.br` : undefined,
       phone,
       instagram,
-      address: `${STREETS[i % STREETS.length]}, ${Math.floor(rand(s + 7) * 2000 + 50)}`,
+      address: `${STREETS[i % STREETS.length]!}, ${Math.floor(rand(s + 7) * 2000 + 50)}`,
     };
     const { score, reasons } = computeScore(partial as never);
     out.push({
@@ -150,8 +150,8 @@ const TEMPLATES: Record<string, { template: string; services: string[]; differen
 
 export function generateSiteContent(lead: Lead): { template: string; content: SiteSection } {
   const key = categoryKey(lead.category);
-  const t = TEMPLATES[key] ?? TEMPLATES.default;
-  const city = lead.city.split(",")[0];
+  const t = TEMPLATES[key] ?? TEMPLATES["default"]!;
+  const city = lead.city.split(",")[0]!;
   return {
     template: t.template,
     content: {
@@ -167,14 +167,14 @@ export function generateSiteContent(lead: Lead): { template: string; content: Si
 }
 
 export function generateMessage(lead: Lead, tone: "Direta" | "Consultiva" | "Casual", channel: "WhatsApp" | "Email") {
-  const city = lead.city.split(",")[0];
+  const city = lead.city.split(",")[0]!;
   const link = lead.site?.url ? `https://${lead.site.url}` : "[visualizar demonstração]";
   const base: Record<string, string> = {
     Direta: `Oi! Tudo bem?\n\nEncontrei a ${lead.name} pesquisando ${lead.category.toLowerCase()} em ${city} e vi que vocês ainda não possuem um site próprio.\n\nCriei uma demonstração de como poderia ficar:\n${link}\n\nSe fizer sentido, te explico como funciona.`,
     Consultiva: `Oi! Tudo bem?\n\nEncontrei a ${lead.name} pesquisando ${lead.category.toLowerCase()} em ${city} e vi que vocês possuem nota ${lead.rating.toFixed(1)} e mais de ${lead.reviews} avaliações no Google — isso mostra uma reputação muito forte.\n\nPercebi que vocês ainda não possuem um site próprio e acabei criando uma ideia de como poderia ficar:\n${link}\n\nSe fizer sentido, posso te explicar como funciona.`,
     Casual: `Oi, tudo certo? 😊\n\nVi a ${lead.name} no Google enquanto pesquisava ${lead.category.toLowerCase()} em ${city}. Achei o trabalho de vocês muito bom (${lead.rating.toFixed(1)}★!).\n\nBrinquei um pouco e montei um site de demonstração pra vocês:\n${link}\n\nSe curtir, me chama que eu te conto o resto.`,
   };
-  const text = base[tone];
+  const text = base[tone]!;
   if (channel === "Email") {
     return `Assunto: Uma ideia de site para a ${lead.name}\n\n${text}\n\nAbraço,\nSeu nome`;
   }
@@ -203,7 +203,7 @@ export function seedDemo(): { leads: Lead[]; campaigns: Campaign[] } {
   const stages: Lead["stage"][] = ["Novo", "Qualificado", "Site criado", "Contatado", "Respondeu", "Reunião", "Proposta", "Venda"];
   leads.forEach((l, i) => {
     l.campaignId = campaign.id;
-    l.stage = stages[Math.min(i, stages.length - 1)];
+    l.stage = stages[Math.min(i, stages.length - 1)]!;
     if (i < 6) {
       const s = generateSiteContent(l);
       l.site = { ...s, published: i < 4, url: `${slugify(l.name)}.demo.leadforge.app`, createdAt: new Date().toISOString() };
