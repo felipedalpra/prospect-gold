@@ -10,33 +10,170 @@
 
 import { Route as rootRouteImport } from './routes/__root'
 import { Route as IndexRouteImport } from './routes/index'
+import { Route as AppRouteImport } from './routes/app'
+import { Route as AuthRouteImport } from './routes/auth'
+import { Route as OnboardingRouteImport } from './routes/onboarding'
+import { Route as AppIndexRouteImport } from './routes/app.index'
+import { Route as AppCampanhasRouteImport } from './routes/app.campanhas'
+import { Route as AppConfiguracoesRouteImport } from './routes/app.configuracoes'
+import { Route as AppPipelineRouteImport } from './routes/app.pipeline'
+import { Route as AppProspectarRouteImport } from './routes/app.prospectar'
+import { Route as AppSitesRouteImport } from './routes/app.sites'
+import { Route as AppLeadsIndexRouteImport } from './routes/app.leads.index'
+import { Route as AppLeadsIdRouteImport } from './routes/app.leads.$id'
 
 const IndexRoute = IndexRouteImport.update({
   id: '/',
   path: '/',
   getParentRoute: () => rootRouteImport,
 } as any)
+const AppRoute = AppRouteImport.update({
+  id: '/app',
+  path: '/app',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const AuthRoute = AuthRouteImport.update({
+  id: '/auth',
+  path: '/auth',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const OnboardingRoute = OnboardingRouteImport.update({
+  id: '/onboarding',
+  path: '/onboarding',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const AppIndexRoute = AppIndexRouteImport.update({
+  id: '/',
+  path: '/',
+  getParentRoute: () => AppRoute,
+} as any)
+const AppCampanhasRoute = AppCampanhasRouteImport.update({
+  id: '/campanhas',
+  path: '/campanhas',
+  getParentRoute: () => AppRoute,
+} as any)
+const AppConfiguracoesRoute = AppConfiguracoesRouteImport.update({
+  id: '/configuracoes',
+  path: '/configuracoes',
+  getParentRoute: () => AppRoute,
+} as any)
+const AppPipelineRoute = AppPipelineRouteImport.update({
+  id: '/pipeline',
+  path: '/pipeline',
+  getParentRoute: () => AppRoute,
+} as any)
+const AppProspectarRoute = AppProspectarRouteImport.update({
+  id: '/prospectar',
+  path: '/prospectar',
+  getParentRoute: () => AppRoute,
+} as any)
+const AppSitesRoute = AppSitesRouteImport.update({
+  id: '/sites',
+  path: '/sites',
+  getParentRoute: () => AppRoute,
+} as any)
+const AppLeadsIndexRoute = AppLeadsIndexRouteImport.update({
+  id: '/leads/',
+  path: '/leads/',
+  getParentRoute: () => AppRoute,
+} as any)
+const AppLeadsIdRoute = AppLeadsIdRouteImport.update({
+  id: '/leads/$id',
+  path: '/leads/$id',
+  getParentRoute: () => AppRoute,
+} as any)
 
 export interface FileRoutesByFullPath {
   '/': typeof IndexRoute
+  '/app': typeof AppRouteWithChildren
+  '/auth': typeof AuthRoute
+  '/onboarding': typeof OnboardingRoute
+  '/app/campanhas': typeof AppCampanhasRoute
+  '/app/configuracoes': typeof AppConfiguracoesRoute
+  '/app/pipeline': typeof AppPipelineRoute
+  '/app/prospectar': typeof AppProspectarRoute
+  '/app/sites': typeof AppSitesRoute
+  '/app/': typeof AppIndexRoute
+  '/app/leads/$id': typeof AppLeadsIdRoute
+  '/app/leads/': typeof AppLeadsIndexRoute
 }
 export interface FileRoutesByTo {
   '/': typeof IndexRoute
+  '/auth': typeof AuthRoute
+  '/onboarding': typeof OnboardingRoute
+  '/app/campanhas': typeof AppCampanhasRoute
+  '/app/configuracoes': typeof AppConfiguracoesRoute
+  '/app/pipeline': typeof AppPipelineRoute
+  '/app/prospectar': typeof AppProspectarRoute
+  '/app/sites': typeof AppSitesRoute
+  '/app': typeof AppIndexRoute
+  '/app/leads/$id': typeof AppLeadsIdRoute
+  '/app/leads': typeof AppLeadsIndexRoute
 }
 export interface FileRoutesById {
   __root__: typeof rootRouteImport
   '/': typeof IndexRoute
+  '/app': typeof AppRouteWithChildren
+  '/auth': typeof AuthRoute
+  '/onboarding': typeof OnboardingRoute
+  '/app/campanhas': typeof AppCampanhasRoute
+  '/app/configuracoes': typeof AppConfiguracoesRoute
+  '/app/pipeline': typeof AppPipelineRoute
+  '/app/prospectar': typeof AppProspectarRoute
+  '/app/sites': typeof AppSitesRoute
+  '/app/': typeof AppIndexRoute
+  '/app/leads/$id': typeof AppLeadsIdRoute
+  '/app/leads/': typeof AppLeadsIndexRoute
 }
 export interface FileRouteTypes {
   fileRoutesByFullPath: FileRoutesByFullPath
-  fullPaths: '/'
+  fullPaths:
+    | '/'
+    | '/app'
+    | '/auth'
+    | '/onboarding'
+    | '/app/campanhas'
+    | '/app/configuracoes'
+    | '/app/pipeline'
+    | '/app/prospectar'
+    | '/app/sites'
+    | '/app/'
+    | '/app/leads/$id'
+    | '/app/leads/'
   fileRoutesByTo: FileRoutesByTo
-  to: '/'
-  id: '__root__' | '/'
+  to:
+    | '/'
+    | '/auth'
+    | '/onboarding'
+    | '/app/campanhas'
+    | '/app/configuracoes'
+    | '/app/pipeline'
+    | '/app/prospectar'
+    | '/app/sites'
+    | '/app'
+    | '/app/leads/$id'
+    | '/app/leads'
+  id:
+    | '__root__'
+    | '/'
+    | '/app'
+    | '/auth'
+    | '/onboarding'
+    | '/app/campanhas'
+    | '/app/configuracoes'
+    | '/app/pipeline'
+    | '/app/prospectar'
+    | '/app/sites'
+    | '/app/'
+    | '/app/leads/$id'
+    | '/app/leads/'
   fileRoutesById: FileRoutesById
 }
 export interface RootRouteChildren {
   IndexRoute: typeof IndexRoute
+  AppRoute: typeof AppRouteWithChildren
+  AuthRoute: typeof AuthRoute
+  OnboardingRoute: typeof OnboardingRoute
 }
 
 declare module '@tanstack/react-router' {
@@ -48,11 +185,115 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof IndexRouteImport
       parentRoute: typeof rootRouteImport
     }
+    '/app': {
+      id: '/app'
+      path: '/app'
+      fullPath: '/app'
+      preLoaderRoute: typeof AppRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/auth': {
+      id: '/auth'
+      path: '/auth'
+      fullPath: '/auth'
+      preLoaderRoute: typeof AuthRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/onboarding': {
+      id: '/onboarding'
+      path: '/onboarding'
+      fullPath: '/onboarding'
+      preLoaderRoute: typeof OnboardingRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/app/': {
+      id: '/app/'
+      path: '/'
+      fullPath: '/app/'
+      preLoaderRoute: typeof AppIndexRouteImport
+      parentRoute: typeof AppRoute
+    }
+    '/app/campanhas': {
+      id: '/app/campanhas'
+      path: '/campanhas'
+      fullPath: '/app/campanhas'
+      preLoaderRoute: typeof AppCampanhasRouteImport
+      parentRoute: typeof AppRoute
+    }
+    '/app/configuracoes': {
+      id: '/app/configuracoes'
+      path: '/configuracoes'
+      fullPath: '/app/configuracoes'
+      preLoaderRoute: typeof AppConfiguracoesRouteImport
+      parentRoute: typeof AppRoute
+    }
+    '/app/pipeline': {
+      id: '/app/pipeline'
+      path: '/pipeline'
+      fullPath: '/app/pipeline'
+      preLoaderRoute: typeof AppPipelineRouteImport
+      parentRoute: typeof AppRoute
+    }
+    '/app/prospectar': {
+      id: '/app/prospectar'
+      path: '/prospectar'
+      fullPath: '/app/prospectar'
+      preLoaderRoute: typeof AppProspectarRouteImport
+      parentRoute: typeof AppRoute
+    }
+    '/app/sites': {
+      id: '/app/sites'
+      path: '/sites'
+      fullPath: '/app/sites'
+      preLoaderRoute: typeof AppSitesRouteImport
+      parentRoute: typeof AppRoute
+    }
+    '/app/leads/': {
+      id: '/app/leads/'
+      path: '/leads'
+      fullPath: '/app/leads/'
+      preLoaderRoute: typeof AppLeadsIndexRouteImport
+      parentRoute: typeof AppRoute
+    }
+    '/app/leads/$id': {
+      id: '/app/leads/$id'
+      path: '/leads/$id'
+      fullPath: '/app/leads/$id'
+      preLoaderRoute: typeof AppLeadsIdRouteImport
+      parentRoute: typeof AppRoute
+    }
   }
 }
 
+interface AppRouteChildren {
+  AppCampanhasRoute: typeof AppCampanhasRoute
+  AppConfiguracoesRoute: typeof AppConfiguracoesRoute
+  AppPipelineRoute: typeof AppPipelineRoute
+  AppProspectarRoute: typeof AppProspectarRoute
+  AppSitesRoute: typeof AppSitesRoute
+  AppIndexRoute: typeof AppIndexRoute
+  AppLeadsIdRoute: typeof AppLeadsIdRoute
+  AppLeadsIndexRoute: typeof AppLeadsIndexRoute
+}
+
+const AppRouteChildren: AppRouteChildren = {
+  AppCampanhasRoute: AppCampanhasRoute,
+  AppConfiguracoesRoute: AppConfiguracoesRoute,
+  AppPipelineRoute: AppPipelineRoute,
+  AppProspectarRoute: AppProspectarRoute,
+  AppSitesRoute: AppSitesRoute,
+  AppIndexRoute: AppIndexRoute,
+  AppLeadsIdRoute: AppLeadsIdRoute,
+  AppLeadsIndexRoute: AppLeadsIndexRoute,
+}
+
+const AppRouteWithChildren = AppRoute._addFileChildren(AppRouteChildren)
+
 const rootRouteChildren: RootRouteChildren = {
   IndexRoute: IndexRoute,
+  AppRoute: AppRouteWithChildren,
+  AuthRoute: AuthRoute,
+  OnboardingRoute: OnboardingRoute,
 }
 export const routeTree = rootRouteImport
   ._addFileChildren(rootRouteChildren)
