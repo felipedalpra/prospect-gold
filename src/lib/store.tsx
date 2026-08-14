@@ -1,150 +1,341 @@
-import { createContext, useContext, useEffect, useMemo, useState, type ReactNode } from "react";
-import type { Campaign, Lead, Profile, Stage } from "./types";
-import { generateMessage, generateSiteContent, seedDemo, slugify } from "./mock";
+import {
+  createContext,
+  useCallback,
+  useContext,
+  useEffect,
+  useMemo,
+  useRef,
+  useState,
+  type ReactNode,
+} from "react";
+import { useAuth } from "./auth";
+import * as db from "./db";
+import { slugify, type Filters } from "./score";
+import { scrapeLeads } from "./rpc/apify";
+import { generateSite, generateMessage } from "./rpc/llm";
+import { publishSite as publishToNetlify } from "./rpc/netlify";
+import type {
+  Campaign,
+  Integration,
+  Lead,
+  LlmProvider,
+  Profile,
+  Provider,
+  SiteSection,
+  Stage,
+} from "./types";
 
 type State = {
   leads: Lead[];
   campaigns: Campaign[];
   profile: Profile;
   credits: number;
+  integrations: Integration[];
+  loading: boolean;
 };
 
-const DEFAULT_PROFILE: Profile = {
-  name: "Felipe Dalpra",
-  email: "felipe@leadforge.app",
+const EMPTY_PROFILE: Profile = {
+  name: "",
+  email: "",
   sells: "Sites",
-  targets: ["Dentistas"],
-  location: "Porto Alegre, RS",
+  targets: [],
+  location: "",
   onboarded: false,
-  plan: "Growth",
+  plan: "Free",
 };
 
-const KEY = "leadforge_state_v1";
-
-function initialState(): State {
-  const { leads, campaigns } = seedDemo();
-  return { leads, campaigns, profile: DEFAULT_PROFILE, credits: 842 };
-}
+const COST = { lead: 1, site: 5, message: 1 } as const;
 
 type Ctx = {
   state: State;
-  addLeads: (leads: Lead[], campaignId?: string) => void;
-  updateLead: (id: string, patch: Partial<Lead>) => void;
-  moveLead: (id: string, stage: Stage) => void;
-  buildSite: (id: string) => void;
-  publishSite: (id: string) => void;
-  writeMessage: (id: string, tone: "Direta" | "Consultiva" | "Casual", channel: "WhatsApp" | "Email") => string;
-  createCampaign: (c: Omit<Campaign, "id" | "createdAt" | "leadIds">, leads: Lead[]) => Campaign;
-  spend: (n: number) => void;
-  setProfile: (p: Partial<Profile>) => void;
-  reset: () => void;
+  refresh: () => Promise<void>;
+
+  /** Which API keys are plugged in — the UI blocks actions that would fail. */
+  keyFor: (provider: Provider) => string | undefined;
+  llmProvider: LlmProvider | null;
+  saveKey: (provider: Provider, apiKey: string) => Promise<void>;
+  removeKey: (provider: Provider) => Promise<void>;
+
+  prospect: (niche: string, location: string, filters: Filters) => Promise<Lead[]>;
+  buildSite: (id: string) => Promise<void>;
+  publishSite: (id: string) => Promise<string>;
+  writeMessage: (
+    id: string,
+    tone: "Direta" | "Consultiva" | "Casual",
+    channel: "WhatsApp" | "Email",
+  ) => Promise<string>;
+
+  updateLead: (id: string, patch: Partial<Lead>) => Promise<void>;
+  patchSiteContent: (id: string, patch: Partial<SiteSection>) => Promise<void>;
+  moveLead: (id: string, stage: Stage) => Promise<void>;
+  createCampaign: (c: { name: string; niche: string; location: string }) => Promise<Campaign>;
+  setProfile: (p: Partial<Profile>) => Promise<void>;
 };
 
 const StoreContext = createContext<Ctx | null>(null);
 
 export function StoreProvider({ children }: { children: ReactNode }) {
-  const [state, setState] = useState<State>(() => initialState());
-  const [hydrated, setHydrated] = useState(false);
+  const { user, ready } = useAuth();
+  const [state, setState] = useState<State>({
+    leads: [],
+    campaigns: [],
+    profile: EMPTY_PROFILE,
+    credits: 0,
+    integrations: [],
+    loading: true,
+  });
 
-  useEffect(() => {
-    try {
-      const raw = localStorage.getItem(KEY);
-      if (raw) setState(JSON.parse(raw) as State);
-    } catch {
-      /* ignore */
-    }
-    setHydrated(true);
+  // Mirror of state.leads kept in sync synchronously. Chained actions (scrape →
+  // generate → publish → write) run faster than React re-renders, so reading
+  // leads off `state` inside one async sequence would see a stale list.
+  const leadsRef = useRef<Lead[]>([]);
+
+  const setLeads = useCallback((fn: (prev: Lead[]) => Lead[]) => {
+    setState((s) => {
+      const leads = fn(s.leads);
+      leadsRef.current = leads;
+      return { ...s, leads };
+    });
   }, []);
 
-  useEffect(() => {
-    if (!hydrated) return;
-    try {
-      localStorage.setItem(KEY, JSON.stringify(state));
-    } catch {
-      /* ignore */
+  const refresh = useCallback(async () => {
+    if (!user) {
+      leadsRef.current = [];
+      setState((s) => ({ ...s, leads: [], campaigns: [], integrations: [], loading: false }));
+      return;
     }
-  }, [state, hydrated]);
+    const [leads, campaigns, profile, integrations] = await Promise.all([
+      db.fetchLeads(),
+      db.fetchCampaigns(),
+      db.fetchProfile(user.id),
+      db.fetchIntegrations(),
+    ]);
+    leadsRef.current = leads;
+    setState({
+      leads,
+      campaigns,
+      profile: profile.profile,
+      credits: profile.credits,
+      integrations,
+      loading: false,
+    });
+  }, [user]);
 
-  const value = useMemo<Ctx>(
-    () => ({
+  useEffect(() => {
+    if (!ready) return;
+    void refresh();
+  }, [ready, refresh]);
+
+  const keyFor = useCallback(
+    (provider: Provider) => state.integrations.find((i) => i.provider === provider)?.apiKey,
+    [state.integrations],
+  );
+
+  // Prefer Claude when both are plugged in; it writes better HTML.
+  const llmProvider: LlmProvider | null = keyFor("anthropic")
+    ? "anthropic"
+    : keyFor("openai")
+      ? "openai"
+      : null;
+
+  const patchLocalLead = useCallback(
+    (id: string, patch: Partial<Lead>) => {
+      setLeads((leads) => leads.map((l) => (l.id === id ? { ...l, ...patch } : l)));
+    },
+    [setLeads],
+  );
+
+  const requireLead = useCallback((id: string) => {
+    const lead = leadsRef.current.find((l) => l.id === id);
+    if (!lead) throw new Error("Lead não encontrado.");
+    return lead;
+  }, []);
+
+  const requireLlm = useCallback(() => {
+    if (!llmProvider) {
+      throw new Error("Configure uma chave da Anthropic ou da OpenAI em Configurações.");
+    }
+    return { provider: llmProvider, apiKey: keyFor(llmProvider)! };
+  }, [llmProvider, keyFor]);
+
+  const value = useMemo<Ctx>(() => {
+    const uid = user?.id;
+
+    return {
       state,
-      addLeads: (leads, campaignId) =>
-        setState((s) => {
-          const existing = new Set(s.leads.map((l) => l.name + l.city));
-          const fresh = leads.filter((l) => !existing.has(l.name + l.city)).map((l) => ({ ...l, campaignId }));
-          return { ...s, leads: [...fresh, ...s.leads], credits: Math.max(0, s.credits - fresh.length) };
-        }),
-      updateLead: (id, patch) =>
-        setState((s) => ({ ...s, leads: s.leads.map((l) => (l.id === id ? { ...l, ...patch } : l)) })),
-      moveLead: (id, stage) =>
+      refresh,
+      keyFor,
+      llmProvider,
+
+      saveKey: async (provider, apiKey) => {
+        if (!uid) throw new Error("Faça login primeiro.");
+        await db.saveIntegration(uid, provider, apiKey);
         setState((s) => ({
           ...s,
-          leads: s.leads.map((l) =>
-            l.id === id
-              ? { ...l, stage, activities: [{ at: new Date().toISOString(), text: `Movido para ${stage}` }, ...l.activities] }
-              : l,
-          ),
-        })),
-      buildSite: (id) =>
-        setState((s) => ({
-          ...s,
-          credits: Math.max(0, s.credits - 5),
-          leads: s.leads.map((l) => {
-            if (l.id !== id) return l;
-            const gen = generateSiteContent(l);
-            return {
-              ...l,
-              stage: l.stage === "Novo" || l.stage === "Qualificado" ? "Site criado" : l.stage,
-              site: { ...gen, published: false, createdAt: new Date().toISOString() },
-              activities: [{ at: new Date().toISOString(), text: "Site demo gerado pela IA" }, ...l.activities],
-            };
-          }),
-        })),
-      publishSite: (id) =>
-        setState((s) => ({
-          ...s,
-          leads: s.leads.map((l) =>
-            l.id === id && l.site
-              ? {
-                  ...l,
-                  site: { ...l.site, published: true, url: `${slugify(l.name)}.demo.leadforge.app` },
-                  activities: [{ at: new Date().toISOString(), text: "Site publicado" }, ...l.activities],
-                }
-              : l,
-          ),
-        })),
-      writeMessage: (id, tone, channel) => {
-        const lead = state.leads.find((l) => l.id === id);
-        if (!lead) return "";
-        const text = generateMessage(lead, tone, channel);
-        setState((s) => ({
-          ...s,
-          credits: Math.max(0, s.credits - 1),
-          leads: s.leads.map((l) => (l.id === id ? { ...l, message: { tone, channel, text } } : l)),
+          integrations: [
+            ...s.integrations.filter((i) => i.provider !== provider),
+            { provider, apiKey, meta: {} },
+          ],
         }));
+      },
+
+      removeKey: async (provider) => {
+        if (!uid) return;
+        await db.deleteIntegration(uid, provider);
+        setState((s) => ({
+          ...s,
+          integrations: s.integrations.filter((i) => i.provider !== provider),
+        }));
+      },
+
+      prospect: async (niche, location, filters) => {
+        if (!uid) throw new Error("Faça login primeiro.");
+        const apiKey = keyFor("apify");
+        if (!apiKey) throw new Error("Configure sua chave da Apify em Configurações.");
+
+        const found = await scrapeLeads({ data: { apiKey, niche, location, filters } });
+        if (found.length === 0) return [];
+
+        const campaign = await db.createCampaignRow(uid, {
+          name: `${niche} — ${location}`.trim(),
+          niche,
+          location,
+        });
+        const saved = await db.insertLeads(uid, found, campaign.id);
+        const credits = await db.spendCredits(uid, saved.length * COST.lead);
+
+        setLeads((leads) => [...saved, ...leads]);
+        setState((s) => ({
+          ...s,
+          campaigns: [{ ...campaign, leadIds: saved.map((l) => l.id) }, ...s.campaigns],
+          credits,
+        }));
+        return saved;
+      },
+
+      buildSite: async (id) => {
+        if (!uid) throw new Error("Faça login primeiro.");
+        const lead = requireLead(id);
+        const { provider, apiKey } = requireLlm();
+
+        const generated = await generateSite({
+          data: { provider, apiKey, lead, sells: state.profile.sells },
+        });
+
+        // Reuse the slug on regeneration so a published URL stays stable.
+        const slug = lead.site?.slug ?? `${slugify(lead.name)}-${lead.id.slice(0, 6)}`;
+        const site = await db.upsertSite(uid, id, { ...generated, slug });
+
+        const nextStage: Stage =
+          lead.stage === "Novo" || lead.stage === "Qualificado" ? "Site criado" : lead.stage;
+        const activities = await db.appendActivity(lead, "Site gerado pela IA");
+        await db.patchLead(id, { stage: nextStage });
+        const credits = await db.spendCredits(uid, COST.site);
+
+        patchLocalLead(id, { site, stage: nextStage, activities });
+        setState((s) => ({ ...s, credits }));
+      },
+
+      publishSite: async (id) => {
+        const lead = requireLead(id);
+        if (!lead.site) throw new Error("Gere o site antes de publicar.");
+        const apiKey = keyFor("netlify");
+        if (!apiKey) throw new Error("Configure seu token do Netlify em Configurações.");
+
+        const result = await publishToNetlify({
+          data: {
+            apiKey,
+            slug: lead.site.slug,
+            html: lead.site.html,
+            siteId: lead.site.netlifySiteId,
+          },
+        });
+
+        await db.markSitePublished(id, result.url, {
+          netlifySiteId: result.siteId,
+          deployId: result.deployId,
+        });
+        const activities = await db.appendActivity(lead, `Site publicado em ${result.url}`);
+        patchLocalLead(id, {
+          site: { ...lead.site, published: true, url: result.url, netlifySiteId: result.siteId },
+          activities,
+        });
+        return result.url;
+      },
+
+      writeMessage: async (id, tone, channel) => {
+        if (!uid) throw new Error("Faça login primeiro.");
+        const lead = requireLead(id);
+        const { provider, apiKey } = requireLlm();
+
+        const text = await generateMessage({
+          data: {
+            provider,
+            apiKey,
+            lead,
+            tone,
+            channel,
+            siteUrl: lead.site?.url ?? "",
+            sells: state.profile.sells,
+            senderName: state.profile.name,
+          },
+        });
+
+        const message = { tone, channel, text };
+        await db.patchLead(id, { message });
+        const credits = await db.spendCredits(uid, COST.message);
+        patchLocalLead(id, { message });
+        setState((s) => ({ ...s, credits }));
         return text;
       },
-      createCampaign: (c, leads) => {
-        const campaign: Campaign = {
-          ...c,
-          id: `camp_${Date.now().toString(36)}`,
-          createdAt: new Date().toISOString(),
-          leadIds: leads.map((l) => l.id),
-        };
-        setState((s) => ({
-          ...s,
-          campaigns: [campaign, ...s.campaigns],
-          leads: [...leads.map((l) => ({ ...l, campaignId: campaign.id })), ...s.leads],
-          credits: Math.max(0, s.credits - leads.length * 2),
-        }));
+
+      updateLead: async (id, patch) => {
+        patchLocalLead(id, patch);
+        await db.patchLead(id, patch);
+      },
+
+      patchSiteContent: async (id, patch) => {
+        const lead = requireLead(id);
+        if (!lead.site) return;
+        const content = { ...lead.site.content, ...patch };
+        patchLocalLead(id, { site: { ...lead.site, content } });
+        await db.patchSiteContent(id, content);
+      },
+
+      moveLead: async (id, stage) => {
+        const lead = requireLead(id);
+        const activities = [
+          { at: new Date().toISOString(), text: `Movido para ${stage}` },
+          ...lead.activities,
+        ];
+        patchLocalLead(id, { stage, activities });
+        await db.patchLead(id, { stage, activities });
+      },
+
+      createCampaign: async (c) => {
+        if (!uid) throw new Error("Faça login primeiro.");
+        const campaign = await db.createCampaignRow(uid, c);
+        setState((s) => ({ ...s, campaigns: [campaign, ...s.campaigns] }));
         return campaign;
       },
-      spend: (n) => setState((s) => ({ ...s, credits: Math.max(0, s.credits - n) })),
-      setProfile: (p) => setState((s) => ({ ...s, profile: { ...s.profile, ...p } })),
-      reset: () => setState(initialState()),
-    }),
-    [state],
-  );
+
+      setProfile: async (p) => {
+        if (!uid) return;
+        setState((s) => ({ ...s, profile: { ...s.profile, ...p } }));
+        await db.updateProfile(uid, p);
+      },
+    };
+  }, [
+    state,
+    user,
+    refresh,
+    keyFor,
+    llmProvider,
+    patchLocalLead,
+    requireLead,
+    requireLlm,
+    setLeads,
+  ]);
 
   return <StoreContext.Provider value={value}>{children}</StoreContext.Provider>;
 }

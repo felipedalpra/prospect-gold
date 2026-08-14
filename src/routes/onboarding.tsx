@@ -12,7 +12,11 @@ export const Route = createFileRoute("/onboarding")({
   head: () => ({
     meta: [
       { title: "Onboarding — LeadForge" },
-      { name: "description", content: "Configure seu perfil de prospecção e encontre seus primeiros clientes com o LeadForge." },
+      {
+        name: "description",
+        content:
+          "Configure seu perfil de prospecção e encontre seus primeiros clientes com o LeadForge.",
+      },
       { property: "og:title", content: "Onboarding — LeadForge" },
       { property: "og:description", content: "Três perguntas rápidas para começar a prospectar." },
     ],
@@ -37,9 +41,10 @@ function Onboarding() {
     { title: "Onde você vende?", sub: "Cidade e estado da sua atuação." },
   ];
 
-  function finish() {
-    setProfile({ sells, targets, location, onboarded: true });
-    navigate({ to: "/app/prospectar" });
+  async function finish() {
+    await setProfile({ sells, targets, location, onboarded: true });
+    // Keys come first — nothing in the app runs without them.
+    await navigate({ to: "/app/configuracoes" });
   }
 
   const current = steps[step]!;
@@ -103,7 +108,9 @@ function Onboarding() {
                     return (
                       <button
                         key={t}
-                        onClick={() => setTargets(active ? targets.filter((x) => x !== t) : [...targets, t])}
+                        onClick={() =>
+                          setTargets(active ? targets.filter((x) => x !== t) : [...targets, t])
+                        }
                         className={cn(
                           "flex items-center justify-between rounded-xl border px-4 py-3 text-sm transition-all",
                           active
@@ -131,14 +138,17 @@ function Onboarding() {
             <div className="mt-8 flex items-center justify-between">
               <button
                 onClick={() => setStep((s) => Math.max(0, s - 1))}
-                className={cn("text-xs text-muted-foreground hover:text-foreground", step === 0 && "invisible")}
+                className={cn(
+                  "text-xs text-muted-foreground hover:text-foreground",
+                  step === 0 && "invisible",
+                )}
               >
                 Voltar
               </button>
               <Button
                 variant="gold"
                 size="lg"
-                onClick={() => (step === 2 ? finish() : setStep((s) => s + 1))}
+                onClick={() => (step === 2 ? void finish() : setStep((s) => s + 1))}
                 disabled={(step === 1 && targets.length === 0) || (step === 2 && !location)}
               >
                 {step === 2 ? "Vamos encontrar seus primeiros clientes" : "Continuar"}

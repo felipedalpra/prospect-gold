@@ -11,6 +11,7 @@ import { useEffect, type ReactNode } from "react";
 
 import appCss from "../styles.css?url";
 import { reportLovableError } from "../lib/lovable-error-reporting";
+import { AuthProvider } from "../lib/auth";
 import { StoreProvider } from "../lib/store";
 import { Toaster } from "../components/ui/sonner";
 
@@ -104,15 +105,17 @@ export const Route = createRootRouteWithContext<{ queryClient: QueryClient }>()(
 
 function RootShell({ children }: { children: ReactNode }) {
   return (
-    <html lang="en">
+    <html lang="pt-BR">
       <head>
         <HeadContent />
       </head>
       <body>
-        <StoreProvider>
-          {children}
-          <Toaster />
-        </StoreProvider>
+        <AuthProvider>
+          <StoreProvider>
+            {children}
+            <Toaster />
+          </StoreProvider>
+        </AuthProvider>
         <Scripts />
       </body>
     </html>

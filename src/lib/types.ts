@@ -34,10 +34,16 @@ export type SiteSection = {
 };
 
 export type LeadSite = {
+  id?: string | undefined;
   template: string;
   content: SiteSection;
+  /** Full standalone HTML document written by the LLM. */
+  html: string;
+  slug: string;
   published: boolean;
   url?: string | undefined;
+  /** Set once published, so republishing updates the same Netlify site. */
+  netlifySiteId?: string | undefined;
   createdAt: string;
 };
 
@@ -53,6 +59,7 @@ export type Lead = {
   phone?: string | undefined;
   instagram?: string | undefined;
   address: string;
+  placeId?: string | undefined;
   score: number;
   reasons: ScoreReason[];
   stage: Stage;
@@ -80,4 +87,52 @@ export type Profile = {
   location: string;
   onboarded: boolean;
   plan: string;
+};
+
+/* -------------------------------------------------------------------------- */
+/*  Integrations — the user plugs in their own API keys                        */
+/* -------------------------------------------------------------------------- */
+
+export type Provider = "apify" | "anthropic" | "openai" | "netlify";
+
+export type Integration = {
+  provider: Provider;
+  apiKey: string;
+  meta: Record<string, unknown>;
+};
+
+export type LlmProvider = Extract<Provider, "anthropic" | "openai">;
+
+export const PROVIDER_INFO: Record<
+  Provider,
+  { label: string; help: string; url: string; placeholder: string; required: boolean }
+> = {
+  apify: {
+    label: "Apify",
+    help: "Busca empresas reais no Google Maps. Sem essa chave a prospecção não roda.",
+    url: "https://console.apify.com/settings/integrations",
+    placeholder: "apify_api_...",
+    required: true,
+  },
+  anthropic: {
+    label: "Anthropic (Claude)",
+    help: "Escreve o site e a copy de abordagem. Configure Anthropic ou OpenAI.",
+    url: "https://console.anthropic.com/settings/keys",
+    placeholder: "sk-ant-...",
+    required: false,
+  },
+  openai: {
+    label: "OpenAI",
+    help: "Alternativa ao Claude para gerar site e copy.",
+    url: "https://platform.openai.com/api-keys",
+    placeholder: "sk-...",
+    required: false,
+  },
+  netlify: {
+    label: "Netlify",
+    help: "Publica os sites gerados em uma URL real para enviar ao lead.",
+    url: "https://app.netlify.com/user/applications#personal-access-tokens",
+    placeholder: "nfp_...",
+    required: false,
+  },
 };

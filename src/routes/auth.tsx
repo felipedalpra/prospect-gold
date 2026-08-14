@@ -1,20 +1,28 @@
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { createFileRoute, Link, useNavigate } from "@tanstack/react-router";
 import { motion } from "motion/react";
+import { toast } from "sonner";
 import { Logo } from "@/components/shared/Logo";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
-import { useStore } from "@/lib/store";
+import { useAuth } from "@/lib/auth";
 import { ArrowRight } from "lucide-react";
 
 export const Route = createFileRoute("/auth")({
   head: () => ({
     meta: [
       { title: "Entrar — LeadForge | Prospecção automatizada" },
-      { name: "description", content: "Acesse o LeadForge e transforme buscas do Google Maps em clientes prontos para abordar." },
+      {
+        name: "description",
+        content:
+          "Acesse o LeadForge e transforme buscas do Google Maps em clientes prontos para abordar.",
+      },
       { property: "og:title", content: "Entrar — LeadForge" },
-      { property: "og:description", content: "Acesse sua conta LeadForge e comece a prospectar em minutos." },
+      {
+        property: "og:description",
+        content: "Acesse sua conta LeadForge e comece a prospectar em minutos.",
+      },
     ],
   }),
   component: AuthPage,
@@ -22,15 +30,34 @@ export const Route = createFileRoute("/auth")({
 
 function AuthPage() {
   const [mode, setMode] = useState<"login" | "signup">("login");
-  const { state, setProfile } = useStore();
+  const { signIn, signUp, session, ready } = useAuth();
   const navigate = useNavigate();
-  const [name, setName] = useState(state.profile.name);
-  const [email, setEmail] = useState(state.profile.email);
+  const [name, setName] = useState("");
+  const [email, setEmail] = useState("");
+  const [password, setPassword] = useState("");
+  const [busy, setBusy] = useState(false);
 
-  function submit(e: React.FormEvent) {
+  useEffect(() => {
+    if (ready && session) void navigate({ to: "/app" });
+  }, [ready, session, navigate]);
+
+  async function submit(e: React.FormEvent) {
     e.preventDefault();
-    setProfile({ name: name || "Você", email: email || "voce@leadforge.app" });
-    navigate({ to: state.profile.onboarded && mode === "login" ? "/app" : "/onboarding" });
+    setBusy(true);
+    try {
+      if (mode === "login") {
+        await signIn(email, password);
+        await navigate({ to: "/app" });
+      } else {
+        await signUp(name, email, password);
+        toast.success("Conta criada! Se pedirem confirmação, verifique seu e-mail.");
+        await navigate({ to: "/onboarding" });
+      }
+    } catch (err) {
+      toast.error(err instanceof Error ? err.message : "Não foi possível entrar.");
+    } finally {
+      setBusy(false);
+    }
   }
 
   return (
@@ -38,16 +65,24 @@ function AuthPage() {
       <div className="pointer-events-none absolute inset-0 grid-bg opacity-30 [mask-image:radial-gradient(ellipse_at_top,black,transparent_70%)]" />
       <div className="relative hidden flex-col justify-between overflow-hidden border-r border-border p-12 lg:flex">
         <div className="pointer-events-none absolute -left-24 top-1/3 h-96 w-96 animate-pulse-glow rounded-full bg-primary/12 blur-[130px]" />
-        <Link to="/"><Logo /></Link>
+        <Link to="/">
+          <Logo />
+        </Link>
         <div className="relative">
           <h2 className="max-w-md text-4xl font-bold leading-tight">
             De uma busca a uma <span className="text-gradient-gold">campanha inteira</span>.
           </h2>
           <p className="mt-4 max-w-sm text-muted-foreground">
-            Leads qualificados, sites demo gerados por IA e abordagens prontas — em um único fluxo.
+            Leads reais do Google Maps, sites gerados por IA e abordagens prontas — em um único
+            fluxo.
           </p>
           <div className="mt-10 space-y-3">
-            {["137 empresas encontradas", "46 sem site", "18 oportunidades quentes", "10 sites gerados"].map((t, i) => (
+            {[
+              "Busca real via Apify",
+              "Sites escritos pela IA",
+              "Publicação no Netlify",
+              "Copy pronta pro WhatsApp",
+            ].map((t, i) => (
               <motion.div
                 key={t}
                 initial={{ opacity: 0, x: -20 }}
@@ -71,7 +106,9 @@ function AuthPage() {
           transition={{ duration: 0.7 }}
           className="w-full max-w-sm rounded-2xl glass p-8"
         >
-          <div className="lg:hidden"><Logo /></div>
+          <div className="lg:hidden">
+            <Logo />
+          </div>
           <h1 className="mt-4 text-2xl font-bold lg:mt-0">
             {mode === "login" ? "Bem-vindo de volta" : "Criar sua conta"}
           </h1>
@@ -83,21 +120,43 @@ function AuthPage() {
             {mode === "signup" && (
               <div className="space-y-1.5">
                 <Label htmlFor="name">Nome</Label>
-                <Input id="name" value={name} onChange={(e) => setName(e.target.value)} placeholder="Seu nome" />
+                <Input
+                  id="name"
+                  value={name}
+                  onChange={(e) => setName(e.target.value)}
+                  placeholder="Seu nome"
+                  required
+                />
               </div>
             )}
             <div className="space-y-1.5">
               <Label htmlFor="email">E-mail</Label>
-              <Input id="email" type="email" value={email} onChange={(e) => setEmail(e.target.value)} placeholder="voce@empresa.com" />
+              <Input
+                id="email"
+                type="email"
+                value={email}
+                onChange={(e) => setEmail(e.target.value)}
+                placeholder="voce@empresa.com"
+                required
+              />
             </div>
             <div className="space-y-1.5">
               <Label htmlFor="pass">Senha</Label>
-              <Input id="pass" type="password" defaultValue="demo1234" />
+              <Input
+                id="pass"
+                type="password"
+                value={password}
+                onChange={(e) => setPassword(e.target.value)}
+                placeholder="mínimo 6 caracteres"
+                minLength={6}
+                required
+              />
             </div>
           </div>
 
-          <Button variant="gold" size="lg" className="mt-6 w-full" type="submit">
-            {mode === "login" ? "Entrar" : "Criar conta"} <ArrowRight className="h-4 w-4" />
+          <Button variant="gold" size="lg" className="mt-6 w-full" type="submit" disabled={busy}>
+            {busy ? "Aguarde..." : mode === "login" ? "Entrar" : "Criar conta"}
+            {!busy && <ArrowRight className="h-4 w-4" />}
           </Button>
 
           <button

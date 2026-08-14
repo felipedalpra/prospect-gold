@@ -1,6 +1,8 @@
-import { createFileRoute, Link, Outlet, useRouterState } from "@tanstack/react-router";
+import { useEffect } from "react";
+import { createFileRoute, Link, Outlet, useNavigate, useRouterState } from "@tanstack/react-router";
 import { motion } from "motion/react";
 import { Logo } from "@/components/shared/Logo";
+import { useAuth } from "@/lib/auth";
 import { useStore } from "@/lib/store";
 import { cn } from "@/lib/utils";
 import {
@@ -12,13 +14,17 @@ import {
   KanbanSquare,
   Settings,
   Zap,
+  LogOut,
 } from "lucide-react";
 
 export const Route = createFileRoute("/app")({
   head: () => ({
     meta: [
       { title: "Dashboard — LeadForge" },
-      { name: "description", content: "Gerencie leads, sites demo, abordagens e pipeline de prospecção no LeadForge." },
+      {
+        name: "description",
+        content: "Gerencie leads, sites demo, abordagens e pipeline de prospecção no LeadForge.",
+      },
       { property: "og:title", content: "Dashboard — LeadForge" },
       { property: "og:description", content: "Sua central de prospecção automatizada." },
     ],
@@ -38,18 +44,35 @@ const NAV = [
 
 function AppLayout() {
   const { state } = useStore();
+  const { session, ready, signOut } = useAuth();
+  const navigate = useNavigate();
   const pathname = useRouterState({ select: (s) => s.location.pathname });
+
+  useEffect(() => {
+    if (ready && !session) void navigate({ to: "/auth" });
+  }, [ready, session, navigate]);
+
+  if (!ready || !session) {
+    return (
+      <div className="grid min-h-screen place-items-center bg-background">
+        <div className="h-10 w-10 animate-spin rounded-full border-2 border-primary/20 border-t-primary" />
+      </div>
+    );
+  }
 
   return (
     <div className="flex min-h-screen bg-background">
       <aside className="fixed inset-y-0 left-0 z-40 hidden w-60 flex-col border-r border-sidebar-border bg-sidebar lg:flex">
         <div className="flex h-16 items-center px-5">
-          <Link to="/"><Logo /></Link>
+          <Link to="/">
+            <Logo />
+          </Link>
         </div>
 
         <nav className="flex-1 space-y-1 px-3 py-4">
           {NAV.map((item) => {
-            const active = "exact" in item && item.exact ? pathname === item.to : pathname.startsWith(item.to);
+            const active =
+              "exact" in item && item.exact ? pathname === item.to : pathname.startsWith(item.to);
             const Icon = item.icon;
             return (
               <Link
@@ -93,19 +116,34 @@ function AppLayout() {
           </div>
           <div className="flex items-center gap-3">
             <span className="grid h-9 w-9 place-items-center rounded-full border border-primary/30 bg-primary/10 text-xs font-bold text-primary">
-              {state.profile.name.slice(0, 2).toUpperCase()}
+              {(state.profile.name || state.profile.email || "?").slice(0, 2).toUpperCase()}
             </span>
-            <div className="min-w-0">
-              <p className="truncate text-xs font-medium">{state.profile.name}</p>
-              <p className="truncate text-[11px] text-muted-foreground">Plano {state.profile.plan}</p>
+            <div className="min-w-0 flex-1">
+              <p className="truncate text-xs font-medium">
+                {state.profile.name || state.profile.email}
+              </p>
+              <p className="truncate text-[11px] text-muted-foreground">
+                Plano {state.profile.plan}
+              </p>
             </div>
+            <button
+              onClick={() => {
+                void signOut().then(() => navigate({ to: "/auth" }));
+              }}
+              title="Sair"
+              className="rounded-md p-1.5 text-muted-foreground transition-colors hover:bg-sidebar-accent hover:text-foreground"
+            >
+              <LogOut className="h-4 w-4" />
+            </button>
           </div>
         </div>
       </aside>
 
       <div className="flex min-w-0 flex-1 flex-col lg:pl-60">
         <div className="sticky top-0 z-30 flex items-center gap-3 border-b border-border bg-background/80 px-5 py-3 backdrop-blur-xl lg:hidden">
-          <Link to="/"><Logo compact /></Link>
+          <Link to="/">
+            <Logo compact />
+          </Link>
           <div className="flex gap-1 overflow-x-auto">
             {NAV.map((i) => (
               <Link

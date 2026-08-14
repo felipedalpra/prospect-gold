@@ -11,7 +11,10 @@ export const Route = createFileRoute("/app/pipeline")({
   head: () => ({
     meta: [
       { title: "Pipeline — LeadForge" },
-      { name: "description", content: "Kanban de prospecção: do lead novo à venda, com arrastar e soltar." },
+      {
+        name: "description",
+        content: "Kanban de prospecção: do lead novo à venda, com arrastar e soltar.",
+      },
       { property: "og:title", content: "Pipeline — LeadForge" },
       { property: "og:description", content: "Acompanhe cada oportunidade em um único lugar." },
     ],
@@ -37,11 +40,18 @@ function Pipeline() {
           return (
             <div
               key={stage}
-              onDragOver={(e) => { e.preventDefault(); setOver(stage); }}
+              onDragOver={(e) => {
+                e.preventDefault();
+                setOver(stage);
+              }}
               onDragLeave={() => setOver((o) => (o === stage ? null : o))}
               onDrop={() => {
-                if (dragging) { moveLead(dragging, stage); toast.success(`Movido para ${stage}`); }
-                setDragging(null); setOver(null);
+                if (dragging) {
+                  void moveLead(dragging, stage);
+                  toast.success(`Movido para ${stage}`);
+                }
+                setDragging(null);
+                setOver(null);
               }}
               className={cn(
                 "w-64 shrink-0 rounded-xl border bg-surface p-3 transition-colors",
@@ -50,7 +60,9 @@ function Pipeline() {
             >
               <div className="mb-3 flex items-center justify-between px-1">
                 <span className="text-xs font-semibold">{stage}</span>
-                <span className="rounded-full bg-surface-2 px-2 py-0.5 text-[11px] text-muted-foreground">{items.length}</span>
+                <span className="rounded-full bg-surface-2 px-2 py-0.5 text-[11px] text-muted-foreground">
+                  {items.length}
+                </span>
               </div>
               <div className="space-y-2">
                 {items.map((l) => (
@@ -65,14 +77,24 @@ function Pipeline() {
                       dragging === l.id && "opacity-50",
                     )}
                   >
-                    <Link to="/app/leads/$id" params={{ id: l.id }} className="block truncate text-sm hover:text-primary">
+                    <Link
+                      to="/app/leads/$id"
+                      params={{ id: l.id }}
+                      className="block truncate text-sm hover:text-primary"
+                    >
                       {l.name}
                     </Link>
-                    <p className="mt-0.5 truncate text-[11px] text-muted-foreground">{l.category} · {l.city}</p>
-                    <div className="mt-2"><ScoreBadge score={l.score} compact /></div>
+                    <p className="mt-0.5 truncate text-[11px] text-muted-foreground">
+                      {l.category} · {l.city}
+                    </p>
+                    <div className="mt-2">
+                      <ScoreBadge score={l.score} compact />
+                    </div>
                   </motion.div>
                 ))}
-                {items.length === 0 && <p className="px-1 py-6 text-center text-[11px] text-muted-foreground">Vazio</p>}
+                {items.length === 0 && (
+                  <p className="px-1 py-6 text-center text-[11px] text-muted-foreground">Vazio</p>
+                )}
               </div>
             </div>
           );

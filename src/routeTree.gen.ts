@@ -19,6 +19,7 @@ import { Route as AppConfiguracoesRouteImport } from './routes/app.configuracoes
 import { Route as AppPipelineRouteImport } from './routes/app.pipeline'
 import { Route as AppProspectarRouteImport } from './routes/app.prospectar'
 import { Route as AppSitesRouteImport } from './routes/app.sites'
+import { Route as SSlugRouteImport } from './routes/s.$slug'
 import { Route as AppLeadsIndexRouteImport } from './routes/app.leads.index'
 import { Route as AppLeadsIdRouteImport } from './routes/app.leads.$id'
 
@@ -72,6 +73,11 @@ const AppSitesRoute = AppSitesRouteImport.update({
   path: '/sites',
   getParentRoute: () => AppRoute,
 } as any)
+const SSlugRoute = SSlugRouteImport.update({
+  id: '/s/$slug',
+  path: '/s/$slug',
+  getParentRoute: () => rootRouteImport,
+} as any)
 const AppLeadsIndexRoute = AppLeadsIndexRouteImport.update({
   id: '/leads/',
   path: '/leads/',
@@ -93,6 +99,7 @@ export interface FileRoutesByFullPath {
   '/app/pipeline': typeof AppPipelineRoute
   '/app/prospectar': typeof AppProspectarRoute
   '/app/sites': typeof AppSitesRoute
+  '/s/$slug': typeof SSlugRoute
   '/app/': typeof AppIndexRoute
   '/app/leads/$id': typeof AppLeadsIdRoute
   '/app/leads/': typeof AppLeadsIndexRoute
@@ -106,6 +113,7 @@ export interface FileRoutesByTo {
   '/app/pipeline': typeof AppPipelineRoute
   '/app/prospectar': typeof AppProspectarRoute
   '/app/sites': typeof AppSitesRoute
+  '/s/$slug': typeof SSlugRoute
   '/app': typeof AppIndexRoute
   '/app/leads/$id': typeof AppLeadsIdRoute
   '/app/leads': typeof AppLeadsIndexRoute
@@ -121,6 +129,7 @@ export interface FileRoutesById {
   '/app/pipeline': typeof AppPipelineRoute
   '/app/prospectar': typeof AppProspectarRoute
   '/app/sites': typeof AppSitesRoute
+  '/s/$slug': typeof SSlugRoute
   '/app/': typeof AppIndexRoute
   '/app/leads/$id': typeof AppLeadsIdRoute
   '/app/leads/': typeof AppLeadsIndexRoute
@@ -137,6 +146,7 @@ export interface FileRouteTypes {
     | '/app/pipeline'
     | '/app/prospectar'
     | '/app/sites'
+    | '/s/$slug'
     | '/app/'
     | '/app/leads/$id'
     | '/app/leads/'
@@ -150,6 +160,7 @@ export interface FileRouteTypes {
     | '/app/pipeline'
     | '/app/prospectar'
     | '/app/sites'
+    | '/s/$slug'
     | '/app'
     | '/app/leads/$id'
     | '/app/leads'
@@ -164,6 +175,7 @@ export interface FileRouteTypes {
     | '/app/pipeline'
     | '/app/prospectar'
     | '/app/sites'
+    | '/s/$slug'
     | '/app/'
     | '/app/leads/$id'
     | '/app/leads/'
@@ -174,6 +186,7 @@ export interface RootRouteChildren {
   AppRoute: typeof AppRouteWithChildren
   AuthRoute: typeof AuthRoute
   OnboardingRoute: typeof OnboardingRoute
+  SSlugRoute: typeof SSlugRoute
 }
 
 declare module '@tanstack/react-router' {
@@ -248,6 +261,13 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof AppSitesRouteImport
       parentRoute: typeof AppRoute
     }
+    '/s/$slug': {
+      id: '/s/$slug'
+      path: '/s/$slug'
+      fullPath: '/s/$slug'
+      preLoaderRoute: typeof SSlugRouteImport
+      parentRoute: typeof rootRouteImport
+    }
     '/app/leads/': {
       id: '/app/leads/'
       path: '/leads'
@@ -294,6 +314,7 @@ const rootRouteChildren: RootRouteChildren = {
   AppRoute: AppRouteWithChildren,
   AuthRoute: AuthRoute,
   OnboardingRoute: OnboardingRoute,
+  SSlugRoute: SSlugRoute,
 }
 export const routeTree = rootRouteImport
   ._addFileChildren(rootRouteChildren)
