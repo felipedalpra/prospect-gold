@@ -31,13 +31,14 @@ export type SiteSection = {
   differentials: string[];
   cta: string;
   accent: string;
+  visualStyle?: string | undefined;
 };
 
 export type LeadSite = {
   id?: string | undefined;
   template: string;
   content: SiteSection;
-  /** Full standalone HTML document written by the LLM. */
+  /** Full standalone HTML document rendered from the structured site content. */
   html: string;
   slug: string;
   published: boolean;

@@ -1,5 +1,6 @@
 import { createServerFn } from "@tanstack/react-start";
 import type { Lead, LlmProvider, SiteSection } from "../types";
+import { renderSiteHtml } from "../site-renderer";
 
 const ANTHROPIC_MODEL = "claude-sonnet-5";
 const OPENAI_MODEL = "gpt-4o";
@@ -87,13 +88,13 @@ function leadBrief(lead: Lead): string {
 /*  Site generation                                                            */
 /* -------------------------------------------------------------------------- */
 
-const SITE_SYSTEM = `Você é um diretor de arte e copywriter sênior que cria landing pages de altíssima qualidade para pequenos negócios brasileiros.
+const SITE_SYSTEM = `Você é um diretor de arte, UX designer e copywriter sênior que cria landing pages de altíssima qualidade para pequenos negócios brasileiros.
 
 Você recebe os dados reais de um negócio (extraídos do Google Maps) e devolve uma landing page COMPLETA.
 
 Responda SEMPRE com um único objeto JSON válido, sem texto antes ou depois, sem cercas de código, no formato:
 {
-  "template": "nome curto do estilo visual escolhido",
+  "template": "nome curto do estilo visual escolhido, como luxury-medical ou dark-barbershop",
   "content": {
     "headline": "...",
     "subheadline": "...",
@@ -101,20 +102,22 @@ Responda SEMPRE com um único objeto JSON válido, sem texto antes ou depois, se
     "services": ["...", "..."],
     "differentials": ["...", "..."],
     "cta": "...",
-    "accent": "um hex de cor, ex #C8A24A"
-  },
-  "html": "documento HTML completo e autossuficiente"
+    "accent": "um hex de cor, ex #C8A24A",
+    "visualStyle": "descrição curta da direção visual"
+  }
 }
 
-Regras do campo html:
-- Documento completo começando em <!DOCTYPE html>, com <html lang="pt-BR">, meta viewport e <title>.
-- TODO o CSS embutido em uma única tag <style>. Nenhum arquivo, fonte, script ou imagem externa — a página precisa funcionar offline.
-- Nada de <img> com URL externa. Use gradientes, formas CSS, tipografia e emoji quando precisar de elemento visual.
-- Responsivo de verdade (mobile primeiro), com seções: hero, serviços, sobre, prova social com a nota real do Google, localização e um CTA final.
+Direção obrigatória:
+- Pense como uma experiência de produto premium, no estilo de uma landing page criada por uma ferramenta moderna de geração de interfaces.
+- O resultado será renderizado por um sistema visual com hero de impacto, imagem, cards, glow, profundidade, animações e CTA.
+- Escreva copy curta, visual e específica. Evite parágrafos longos e aparência de documento.
+- Escolha um template adequado ao nicho e uma direção visual coerente: editorial, tecnológico, sofisticado ou energético.
+- Gere entre 3 e 6 serviços e entre 3 e 4 diferenciais.
 - Se houver telefone, os botões de CTA devem apontar para https://wa.me/<numero só com dígitos, com 55 na frente>.
 - Português do Brasil. Copy concreta e específica ao negócio — nada de "Lorem ipsum" ou placeholder.
 - Nunca invente fatos: não crie preços, prêmios, anos de fundação ou depoimentos. Use apenas os dados fornecidos.
-- Design elegante e moderno, digno de um negócio premium. Nada de visual amador.`;
+- Design elegante e moderno, digno de um negócio premium. Nada de visual amador.
+- Não gere HTML, CSS ou JavaScript. Retorne somente o JSON especificado.`;
 
 export type GenerateSiteInput = {
   provider: LlmProvider;
@@ -134,7 +137,7 @@ export const generateSite = createServerFn({ method: "POST" })
       apiKey: data.apiKey,
       system: SITE_SYSTEM,
       maxTokens: 16000,
-      prompt: `Crie a landing page deste negócio:\n\n${leadBrief(data.lead)}\n\nEsta página será usada como demonstração por alguém que vende ${data.sells || "sites"}. Ela precisa impressionar o dono do negócio à primeira vista.`,
+      prompt: `Crie a direção visual e o conteúdo estruturado da landing page deste negócio.\n\n${leadBrief(data.lead)}\n\nEsta página será usada como demonstração por alguém que vende ${data.sells || "sites"}. Ela precisa parecer uma landing page premium, visual e tecnológica à primeira vista.`,
     });
 
     let parsed: GeneratedSite;
@@ -144,10 +147,24 @@ export const generateSite = createServerFn({ method: "POST" })
       throw new Error("A IA devolveu uma resposta que não pôde ser lida. Tente gerar novamente.");
     }
 
-    if (!parsed.html?.includes("<html")) {
-      throw new Error("A IA não devolveu um HTML válido. Tente gerar novamente.");
+    if (!parsed.template || !parsed.content?.headline || !Array.isArray(parsed.content.services)) {
+      throw new Error("A IA não devolveu uma estrutura visual válida. Tente gerar novamente.");
     }
-    return parsed;
+    const content: SiteSection = {
+      headline: parsed.content.headline,
+      subheadline: parsed.content.subheadline ?? "",
+      about: parsed.content.about ?? "",
+      services: parsed.content.services,
+      differentials: parsed.content.differentials ?? [],
+      cta: parsed.content.cta ?? "Fale conosco",
+      accent: parsed.content.accent ?? "#D5AD61",
+      visualStyle: parsed.content.visualStyle,
+    };
+    return {
+      template: parsed.template,
+      content,
+      html: renderSiteHtml(data.lead, content, parsed.template),
+    };
   });
 
 /* -------------------------------------------------------------------------- */

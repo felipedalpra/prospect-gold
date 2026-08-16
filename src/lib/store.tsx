@@ -14,6 +14,7 @@ import { slugify, type Filters } from "./score";
 import { scrapeLeads } from "./rpc/apify";
 import { generateSite, generateMessage } from "./rpc/llm";
 import { publishSite as publishToNetlify } from "./rpc/netlify";
+import { renderSiteHtml } from "./site-renderer";
 import type {
   Campaign,
   Integration,
@@ -298,8 +299,9 @@ export function StoreProvider({ children }: { children: ReactNode }) {
         const lead = requireLead(id);
         if (!lead.site) return;
         const content = { ...lead.site.content, ...patch };
-        patchLocalLead(id, { site: { ...lead.site, content } });
-        await db.patchSiteContent(id, content);
+        const html = renderSiteHtml(lead, content, lead.site.template);
+        patchLocalLead(id, { site: { ...lead.site, content, html } });
+        await db.patchSiteContent(id, content, html);
       },
 
       moveLead: async (id, stage) => {
