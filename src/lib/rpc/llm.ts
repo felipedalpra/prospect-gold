@@ -128,6 +128,7 @@ Direção de conteúdo:
 - Copy curta, concreta e específica ao negócio. Português do Brasil.
 - 3 a 6 serviços, e um serviceNotes para CADA serviço, na mesma ordem (máx. 14 palavras cada).
 - 3 a 4 diferenciais.
+- O "cta" é o TEXTO DE UM BOTÃO: no máximo 3 palavras, imperativo, sem ponto final. NUNCA escreva telefone, número ou frase inteira nele (ex.: "Agendar horário", "Falar no WhatsApp", "Marcar consulta"). O número entra no link, nunca na copy.
 - Nunca invente fatos: nada de preços, prêmios, anos de fundação, depoimentos ou número de clientes. Use só os dados fornecidos.
 - Nada de "Lorem ipsum" ou placeholder.
 - Não gere HTML, CSS ou JavaScript. Retorne somente o JSON especificado.`;

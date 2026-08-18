@@ -328,6 +328,107 @@ function mapsHref(lead: Lead): string {
   return "https://www.google.com/maps/search/?api=1&query=" + encodeURIComponent(q);
 }
 
+/**
+ * The AI sometimes writes a whole sentence — phone number included — into the
+ * CTA. A button label is two or three words, and the number belongs in the
+ * link, never in the copy.
+ */
+function ctaLabel(raw: string): string {
+  const clean = raw
+    .replace(/\+?\d[\d\s().-]{6,}\d/g, "")
+    .replace(/\bligue\b|\bwhats?app\b|\bpara\b|\bno\b/gi, (m) => (/whats/i.test(m) ? m : ""))
+    .replace(/[.!]+\s*$/, "")
+    .replace(/\s{2,}/g, " ")
+    .trim();
+  const words = clean.split(/\s+/).filter(Boolean);
+  if (words.length === 0 || words.length > 5) return "Falar no WhatsApp";
+  const label = words.join(" ");
+  return label.length > 34 ? "Falar no WhatsApp" : label;
+}
+
+const WHATS_ICON =
+  '<svg viewBox="0 0 24 24" width="26" height="26" aria-hidden="true" fill="currentColor">' +
+  '<path d="M17.47 14.38c-.3-.15-1.76-.87-2.03-.97-.27-.1-.47-.15-.67.15-.2.3-.77.96-.94 1.16-.17.2-.35.22-.64.08-.3-.15-1.25-.46-2.39-1.47-.88-.79-1.48-1.76-1.65-2.06-.17-.3-.02-.46.13-.6.13-.14.3-.35.45-.53.15-.18.2-.3.3-.5.1-.2.05-.38-.02-.53-.08-.15-.67-1.6-.92-2.2-.24-.58-.49-.5-.67-.51h-.57c-.2 0-.52.07-.79.37-.27.3-1.04 1.02-1.04 2.48s1.07 2.88 1.22 3.08c.15.2 2.1 3.2 5.08 4.49.71.3 1.26.49 1.69.63.71.22 1.36.19 1.87.12.57-.09 1.76-.72 2-1.41.25-.7.25-1.29.18-1.42-.07-.13-.27-.2-.57-.35z"/>' +
+  '<path d="M12.04 2C6.6 2 2.17 6.43 2.17 11.87c0 1.74.46 3.44 1.33 4.94L2 22l5.34-1.4a9.85 9.85 0 0 0 4.7 1.2h.01c5.43 0 9.86-4.43 9.86-9.87 0-2.64-1.03-5.12-2.9-6.98A9.8 9.8 0 0 0 12.04 2zm0 18.06h-.01a8.2 8.2 0 0 1-4.17-1.14l-.3-.18-3.1.81.83-3.02-.2-.31a8.16 8.16 0 0 1-1.25-4.35c0-4.52 3.68-8.2 8.2-8.2 2.2 0 4.26.86 5.81 2.41a8.15 8.15 0 0 1 2.4 5.8c0 4.52-3.68 8.2-8.2 8.2z"/></svg>';
+
+/** Floating WhatsApp button — standard on every layout. */
+function whatsappFab(lead: Lead, label: string): string {
+  if (!lead.phone) return "";
+  return (
+    '<a class="wafab" href="' +
+    phoneHref(lead.phone) +
+    '" target="_blank" rel="noopener" aria-label="' +
+    esc(label) +
+    '" title="' +
+    esc(label) +
+    '">' +
+    WHATS_ICON +
+    "</a>"
+  );
+}
+
+/** Shared styles for the WhatsApp button and the map footer. */
+function standardCss(id: Identity): string {
+  return `
+.wafab{position:fixed;right:22px;bottom:22px;z-index:60;width:58px;height:58px;border-radius:50%;display:grid;place-items:center;background:#25d366;color:#fff;box-shadow:0 12px 34px rgba(37,211,102,.42);transition:transform .3s cubic-bezier(.2,.7,.3,1),box-shadow .3s}
+.wafab:hover{transform:translateY(-3px) scale(1.05);box-shadow:0 18px 44px rgba(37,211,102,.55)}
+.mapfoot{margin-top:24px;border-top:1px solid var(--line)}
+.mapfoot iframe{width:100%;height:340px;border:0;display:block;filter:${id.mode === "dark" ? "invert(.92) hue-rotate(180deg) saturate(.75) contrast(.9)" : "saturate(.85)"}}
+.footgrid{display:grid;grid-template-columns:1.4fr 1fr 1fr;gap:26px;padding:34px 0 40px;font-size:14px;color:var(--muted);align-items:start}
+.footgrid strong{display:block;color:var(--ink);font-size:15px;margin-bottom:6px;letter-spacing:-.02em}
+.footgrid a:hover{color:var(--accent)}
+.footgrid .lbl{font-size:11px;letter-spacing:.18em;text-transform:uppercase;color:var(--accent);display:block;margin-bottom:8px}
+.footbar{display:flex;justify-content:space-between;gap:16px;flex-wrap:wrap;padding:16px 0 42px;border-top:1px solid var(--line);font-size:12px;color:var(--muted)}
+@media(max-width:800px){.footgrid{grid-template-columns:1fr;gap:22px}.mapfoot iframe{height:260px}.wafab{right:16px;bottom:16px;width:54px;height:54px}}`;
+}
+
+/** Embedded Google map + the address block that replaces the old CTA slab. */
+function mapFooter(lead: Lead, id: Identity): string {
+  const query = encodeURIComponent(
+    lead.address
+      ? [lead.address, lead.city].filter(Boolean).join(", ")
+      : [lead.name, lead.city].filter(Boolean).join(", "),
+  );
+  return (
+    '<footer class="mapfoot" id="contato">' +
+    '<iframe title="Localização de ' +
+    esc(lead.name) +
+    '" src="https://www.google.com/maps?q=' +
+    query +
+    '&z=17&output=embed" loading="lazy" referrerpolicy="no-referrer-when-downgrade"></iframe>' +
+    '<div class="wrap footgrid">' +
+    '<div><span class="lbl">Onde estamos</span><strong>' +
+    esc(lead.name) +
+    "</strong>" +
+    esc([lead.address, lead.city].filter(Boolean).join(" · ")) +
+    '<br><a href="' +
+    mapsHref(lead) +
+    '" target="_blank" rel="noopener">Como chegar ↗</a></div>' +
+    '<div><span class="lbl">Contato</span>' +
+    (lead.phone
+      ? '<a href="' +
+        phoneHref(lead.phone) +
+        '" target="_blank" rel="noopener">' +
+        esc(lead.phone) +
+        "</a><br>"
+      : "") +
+    (lead.instagram ? esc(lead.instagram) : "") +
+    "</div>" +
+    '<div><span class="lbl">Avaliações</span>' +
+    lead.rating.toFixed(1) +
+    " no Google · " +
+    lead.reviews +
+    " avaliações</div></div>" +
+    '<div class="wrap footbar"><span>© ' +
+    new Date().getFullYear() +
+    " " +
+    esc(lead.name) +
+    "</span><span>" +
+    esc(id.mono) +
+    "</span></div></footer>"
+  );
+}
+
 type Parts = { css: string; body: string };
 
 /* -------------------------------------------------------------------------- */
@@ -337,6 +438,7 @@ type Parts = { css: string; body: string };
 
 function editorial(lead: Lead, c: SiteSection, id: Identity): Parts {
   const cta = phoneHref(lead.phone);
+  const label = ctaLabel(c.cta);
   const css = `
 body{font-family:"Inter",ui-sans-serif,system-ui,sans-serif;background:var(--bg)}
 .serif{font-family:"Georgia","Times New Roman",serif;font-weight:400;letter-spacing:-.02em}
@@ -394,13 +496,13 @@ body{font-family:"Inter",ui-sans-serif,system-ui,sans-serif;background:var(--bg)
   const body = `
 <header class="wrap nav" data-nav><a class="brand" href="#top">${logoMark(lead, id)}${esc(lead.name)}</a>
 <nav class="links"><a href="#servicos">Serviços</a><a href="#galeria">Galeria</a><a href="#sobre">Sobre</a><a href="#contato">Contato</a></nav>
-<a class="btn navbtn" href="${cta}">${esc(c.cta)}</a></header>
+<a class="btn navbtn" href="${cta}">${esc(label)}</a></header>
 <main id="top">
 <section class="wrap hero">
 <div><div class="eyebrow">${esc(lead.category)} · ${esc(lead.city)}</div>
 <h1 class="serif">${esc(c.headline)}</h1>
 <p class="sub">${esc(c.subheadline)}</p>
-<div class="acts"><a class="btn primary" href="${cta}">${esc(c.cta)}</a><a class="btn ghost" href="#servicos">Ver serviços</a></div></div>
+<div class="acts"><a class="btn primary" href="${cta}">${esc(label)}</a><a class="btn ghost" href="#servicos">Ver serviços</a></div></div>
 <div class="heroshot rv"><img src="${esc(id.images[0] ?? "")}" alt="${esc(lead.name)}" loading="eager"></div>
 </section>
 <div class="wrap"><div class="rule"><span><b>${lead.rating.toFixed(1)}</b> no Google · ${lead.reviews} avaliações</span><span><b>Local</b> ${esc(lead.address || lead.city)}</span>${lead.instagram ? `<span><b>Instagram</b> ${esc(lead.instagram)}</span>` : ""}</div></div>
@@ -431,12 +533,9 @@ body{font-family:"Inter",ui-sans-serif,system-ui,sans-serif;background:var(--bg)
 <div class="score rv"><div class="big serif">${lead.rating.toFixed(1)}</div><div class="lab">de avaliação média no Google,<br>com ${lead.reviews} avaliações públicas.</div></div>
 </div></section>
 
-<section class="wrap" id="contato"><div class="cta rv"><div class="eyebrow">Vamos conversar</div>
-<h2 class="serif" style="margin-top:14px">Pronto quando você estiver.</h2>
-<p>${esc(lead.name)} atende em ${esc(lead.address || lead.city)}. Chame agora e garanta seu horário.</p>
-<a class="btn primary" href="${cta}">${esc(c.cta)}</a></div></section>
 </main>
-<footer class="wrap foot"><span>© ${new Date().getFullYear()} ${esc(lead.name)}</span><a href="${mapsHref(lead)}" target="_blank" rel="noopener">${esc(lead.address || lead.city)} ↗</a></footer>`;
+${whatsappFab(lead, label)}
+${mapFooter(lead, id)}`;
 
   return { css, body };
 }
@@ -448,6 +547,7 @@ body{font-family:"Inter",ui-sans-serif,system-ui,sans-serif;background:var(--bg)
 
 function immersive(lead: Lead, c: SiteSection, id: Identity): Parts {
   const cta = phoneHref(lead.phone);
+  const label = ctaLabel(c.cta);
   const marquee = [...c.services.filter(Boolean), esc(lead.city)]
     .slice(0, 8)
     .map((s) => `<span>${esc(s)}</span><i>✦</i>`)
@@ -519,13 +619,13 @@ body{font-family:"Inter",ui-sans-serif,system-ui,sans-serif}
   const body = `
 <header class="nav" data-nav><a class="brand" href="#top">${logoMark(lead, id)}${esc(lead.name)}</a>
 <nav class="links"><a href="#servicos">Serviços</a><a href="#galeria">Galeria</a><a href="#sobre">Sobre</a><a href="#contato">Contato</a></nav>
-<a class="btn navbtn" href="${cta}">${esc(c.cta)} ↗</a></header>
+<a class="btn navbtn" href="${cta}">${esc(label)} ↗</a></header>
 <main id="top">
 <section class="stage"><div class="stagebg" data-px="0.16"><img src="${esc(id.images[0] ?? "")}" alt="${esc(lead.name)}" loading="eager"></div>
 <div class="wrap stageinner"><div class="eyebrow rv">${esc(lead.category)} · ${esc(lead.city)}</div>
 <h1 class="rv" data-d="1">${esc(c.headline)}</h1>
 <p class="sub rv" data-d="2">${esc(c.subheadline)}</p>
-<div class="acts rv" data-d="3"><a class="btn primary" href="${cta}">${esc(c.cta)} ↗</a><a class="btn ghost" href="#servicos">Explorar</a></div>
+<div class="acts rv" data-d="3"><a class="btn primary" href="${cta}">${esc(label)} ↗</a><a class="btn ghost" href="#servicos">Explorar</a></div>
 <div class="chips rv" data-d="4"><span class="chip"><b>${lead.rating.toFixed(1)}/5</b> · ${lead.reviews} avaliações no Google</span><span class="chip">${esc(lead.address || lead.city)}</span>${lead.instagram ? `<span class="chip">${esc(lead.instagram)}</span>` : ""}</div>
 </div></section>
 
@@ -557,12 +657,9 @@ body{font-family:"Inter",ui-sans-serif,system-ui,sans-serif}
 <div class="panel rv"><div class="big">${lead.rating.toFixed(1)}</div><div class="lab">de avaliação média no Google<br>com ${lead.reviews} avaliações públicas</div></div>
 </div></section>
 
-<section class="wrap" id="contato"><div class="final rv"><img src="${esc(id.images[id.images.length - 1] ?? "")}" alt="" loading="lazy">
-<div class="in2"><div class="eyebrow">Vamos conversar</div><h2 style="margin-top:14px">${esc(c.cta)} hoje mesmo.</h2>
-<p>${esc(lead.name)} · ${esc(lead.address || lead.city)}</p>
-<a class="btn primary" href="${cta}">${esc(c.cta)} ↗</a></div></div></section>
 </main>
-<footer class="wrap foot"><span>© ${new Date().getFullYear()} ${esc(lead.name)}</span><a href="${mapsHref(lead)}" target="_blank" rel="noopener">Como chegar ↗</a></footer>`;
+${whatsappFab(lead, label)}
+${mapFooter(lead, id)}`;
 
   return { css, body };
 }
@@ -575,6 +672,7 @@ body{font-family:"Inter",ui-sans-serif,system-ui,sans-serif}
 
 function showcase(lead: Lead, c: SiteSection, id: Identity): Parts {
   const cta = phoneHref(lead.phone);
+  const label = ctaLabel(c.cta);
   const css = `
 body{font-family:"Inter",ui-sans-serif,system-ui,sans-serif;background:var(--bg)}
 .nav{position:sticky;top:0;z-index:30;display:flex;align-items:center;justify-content:space-between;gap:20px;padding:16px max(22px,calc((100vw - 1200px)/2));background:color-mix(in srgb,var(--bg) 85%,transparent);backdrop-filter:blur(14px);transition:box-shadow .3s}
@@ -640,13 +738,13 @@ body{font-family:"Inter",ui-sans-serif,system-ui,sans-serif;background:var(--bg)
   const body = `
 <header class="nav" data-nav><a class="brand" href="#top">${logoMark(lead, id)}${esc(lead.name)}</a>
 <nav class="links"><a href="#servicos">Serviços</a><a href="#galeria">Galeria</a><a href="#sobre">Sobre</a><a href="#contato">Contato</a></nav>
-<a class="btn navbtn" href="${cta}">${esc(c.cta)}</a></header>
+<a class="btn navbtn" href="${cta}">${esc(label)}</a></header>
 <main id="top">
 <section class="wrap hero">
 <div><div class="eyebrow">${esc(lead.category)} · ${esc(lead.city)}</div>
 <h1 class="rv">${esc(c.headline)}</h1>
 <p class="sub rv" data-d="1">${esc(c.subheadline)}</p>
-<div class="acts rv" data-d="2"><a class="btn primary" href="${cta}">${esc(c.cta)}</a><a class="btn ghost" href="#galeria">Ver a galeria</a></div>
+<div class="acts rv" data-d="2"><a class="btn primary" href="${cta}">${esc(label)}</a><a class="btn ghost" href="#galeria">Ver a galeria</a></div>
 <div class="trust rv" data-d="3"><span class="stars">${stars}</span><span><b>${lead.rating.toFixed(1)}</b> · ${lead.reviews} avaliações no Google</span><span>${esc(lead.address || lead.city)}</span></div></div>
 <div class="collage rv">${gallery(id, lead, 0, 3)}</div>
 </section>
@@ -684,18 +782,9 @@ body{font-family:"Inter",ui-sans-serif,system-ui,sans-serif;background:var(--bg)
 <div class="aboutimg rv"><img src="${esc(id.images[2] ?? id.images[0] ?? "")}" alt="${esc(lead.name)}" loading="lazy"></div>
 </div></section>
 
-<section class="wrap" id="contato"><div class="contact rv">
-<div class="cbox"><div class="eyebrow">Contato</div><h2>Fale com a gente</h2>
-<p>Atendemos em ${esc(lead.city)}. Chame no WhatsApp e responda rápido.</p>
-<div class="info"><div><i>◉</i><span>${esc(lead.address || lead.city)}</span></div>
-${lead.phone ? `<div><i>✆</i><span>${esc(lead.phone)}</span></div>` : ""}
-${lead.instagram ? `<div><i>◎</i><span>${esc(lead.instagram)}</span></div>` : ""}
-<div><i>★</i><span>${lead.rating.toFixed(1)} de ${lead.reviews} avaliações no Google</span></div></div>
-<a class="btn primary" href="${cta}">${esc(c.cta)}</a></div>
-<div class="cimg"><img src="${esc(id.images[1] ?? id.images[0] ?? "")}" alt="${esc(lead.name)}" loading="lazy"></div>
-</div></section>
 </main>
-<footer class="wrap foot"><span>© ${new Date().getFullYear()} ${esc(lead.name)}</span><a href="${mapsHref(lead)}" target="_blank" rel="noopener">Ver no mapa ↗</a></footer>`;
+${whatsappFab(lead, label)}
+${mapFooter(lead, id)}`;
 
   return { css, body };
 }
@@ -707,6 +796,7 @@ ${lead.instagram ? `<div><i>◎</i><span>${esc(lead.instagram)}</span></div>` : 
 
 function minimal(lead: Lead, c: SiteSection, id: Identity): Parts {
   const cta = phoneHref(lead.phone);
+  const label = ctaLabel(c.cta);
   const css = `
 body{font-family:"Inter",ui-sans-serif,system-ui,sans-serif;letter-spacing:-.01em}
 .wrap{width:min(940px,calc(100% - 44px))}
@@ -752,11 +842,11 @@ body{font-family:"Inter",ui-sans-serif,system-ui,sans-serif;letter-spacing:-.01e
   const body = `
 <header class="wrap nav"><a class="brand" href="#top">${logoMark(lead, id)}${esc(lead.name)}</a>
 <nav class="links"><a href="#servicos">Serviços</a><a href="#sobre">Sobre</a><a href="#contato">Contato</a></nav>
-<a class="link" href="${cta}">${esc(c.cta)} →</a></header>
+<a class="link" href="${cta}">${esc(label)} →</a></header>
 <main id="top">
 <section class="wrap hero"><div class="eyebrow">${esc(lead.category)} · ${esc(lead.city)}</div>
 <h1 class="rv">${esc(c.headline)}</h1><p class="sub rv" data-d="1">${esc(c.subheadline)}</p>
-<div class="acts rv" data-d="2"><a class="btn primary" href="${cta}">${esc(c.cta)}</a><a class="link" href="#servicos">Conheça o trabalho</a></div></section>
+<div class="acts rv" data-d="2"><a class="btn primary" href="${cta}">${esc(label)}</a><a class="link" href="#servicos">Conheça o trabalho</a></div></section>
 <div class="wrap"><div class="cover rv"><img src="${esc(id.images[0] ?? "")}" alt="${esc(lead.name)}" loading="eager"></div>
 <div class="meta"><span><b>${lead.rating.toFixed(1)}</b> no Google</span><span><b>${lead.reviews}</b> avaliações</span><span>${esc(lead.address || lead.city)}</span></div></div>
 
@@ -780,12 +870,9 @@ body{font-family:"Inter",ui-sans-serif,system-ui,sans-serif;letter-spacing:-.01e
     .map((d, i) => `<li class="rv" data-d="${i + 1}"><i>0${i + 1}</i><span>${esc(d)}</span></li>`)
     .join("")}</ul></section>
 
-<section class="wrap end" id="contato"><div class="lab">Contato</div>
-<h2 class="rv">Vamos conversar.</h2>
-<p class="rv">${esc(lead.name)} · ${esc(lead.address || lead.city)}${lead.phone ? " · " + esc(lead.phone) : ""}</p>
-<div class="acts"><a class="btn primary" href="${cta}">${esc(c.cta)}</a><a class="link" href="${mapsHref(lead)}" target="_blank" rel="noopener">Ver no mapa</a></div></section>
 </main>
-<footer class="wrap foot"><span>© ${new Date().getFullYear()} ${esc(lead.name)}</span><span>${esc(lead.city)}</span></footer>`;
+${whatsappFab(lead, label)}
+${mapFooter(lead, id)}`;
 
   return { css, body };
 }
@@ -804,6 +891,8 @@ const BUILDERS: Record<SiteLayout, (l: Lead, c: SiteSection, i: Identity) => Par
 export function renderSiteHtml(lead: Lead, content: SiteSection, template: string): string {
   const id = identityOf(lead, content, template);
   const { css, body } = BUILDERS[id.layout](lead, content, id);
+  // The WhatsApp button and the map footer are standard on every layout.
+  const shared = standardCss(id);
   const description = (content.subheadline || content.about || lead.name).slice(0, 155);
 
   return (
@@ -832,6 +921,7 @@ export function renderSiteHtml(lead: Lead, content: SiteSection, template: strin
     palette(id) +
     RESET +
     css +
+    shared +
     "</style></head><body>" +
     body +
     SCRIPT +
