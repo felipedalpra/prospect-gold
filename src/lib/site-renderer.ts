@@ -264,10 +264,11 @@ h1,h2,h3,p,ul,figure{margin:0}ul{padding:0;list-style:none}
 .btn{display:inline-flex;align-items:center;gap:.5em;border-radius:999px;font-weight:650;transition:transform .3s cubic-bezier(.2,.7,.3,1),box-shadow .3s,background .3s,color .3s}
 .btn:hover{transform:translateY(-2px)}
 .eyebrow{font-size:11px;letter-spacing:.22em;text-transform:uppercase;font-weight:700;color:var(--accent)}
-.rv{opacity:0;transform:translateY(26px);transition:opacity .9s cubic-bezier(.2,.7,.3,1),transform .9s cubic-bezier(.2,.7,.3,1)}
-.rv.in{opacity:1;transform:none}
+.rv{transition:opacity .9s cubic-bezier(.2,.7,.3,1),transform .9s cubic-bezier(.2,.7,.3,1)}
+.js .rv{opacity:0;transform:translateY(26px)}
+.js .rv.in{opacity:1;transform:none}
 .rv[data-d="1"]{transition-delay:.09s}.rv[data-d="2"]{transition-delay:.18s}.rv[data-d="3"]{transition-delay:.27s}.rv[data-d="4"]{transition-delay:.36s}.rv[data-d="5"]{transition-delay:.45s}
-@media(prefers-reduced-motion:reduce){*,*::before,*::after{animation:none!important;transition:none!important;scroll-behavior:auto!important}.rv{opacity:1;transform:none}}`;
+@media(prefers-reduced-motion:reduce){*,*::before,*::after{animation:none!important;transition:none!important;scroll-behavior:auto!important}.js .rv{opacity:1;transform:none}}`;
 
 /** Scroll reveals + light parallax. Kept tiny and dependency free. */
 const SCRIPT = `<script>
@@ -808,6 +809,8 @@ export function renderSiteHtml(lead: Lead, content: SiteSection, template: strin
   return (
     '<!doctype html><html lang="pt-BR"><head><meta charset="utf-8">' +
     '<meta name="viewport" content="width=device-width,initial-scale=1">' +
+    // Only arm the scroll reveals when scripts can actually undo them.
+    '<script>document.documentElement.className+=" js"</script>' +
     '<meta name="theme-color" content="' +
     (id.mode === "dark" ? "#0a0a0b" : "#ffffff") +
     '">' +

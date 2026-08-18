@@ -56,7 +56,7 @@ export function SitePreview({
         <iframe
           title={`Site de ${lead.name}`}
           srcDoc={html}
-          sandbox="allow-same-origin allow-popups allow-popups-to-escape-sandbox"
+          sandbox="allow-scripts allow-popups allow-popups-to-escape-sandbox"
           className={cn(
             "h-[620px] border-0 bg-white",
             device === "desktop"
