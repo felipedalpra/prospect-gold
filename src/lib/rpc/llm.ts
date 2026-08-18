@@ -1,6 +1,8 @@
 import { createServerFn } from "@tanstack/react-start";
-import type { Lead, LlmProvider, SiteSection } from "../types";
+import type { Lead, LlmProvider, SiteLayout, SiteSection } from "../types";
+import { SITE_LAYOUTS } from "../types";
 import { renderSiteHtml } from "../site-renderer";
+import { fetchPlaceImages } from "./apify";
 
 const ANTHROPIC_MODEL = "claude-sonnet-5";
 const OPENAI_MODEL = "gpt-4o";
@@ -88,35 +90,46 @@ function leadBrief(lead: Lead): string {
 /*  Site generation                                                            */
 /* -------------------------------------------------------------------------- */
 
-const SITE_SYSTEM = `Você é um diretor de arte, UX designer e copywriter sênior que cria landing pages de altíssima qualidade para pequenos negócios brasileiros.
+const SITE_SYSTEM = `Você é um diretor de arte, UX designer e copywriter sênior que cria landing pages sob medida para pequenos negócios brasileiros.
 
-Você recebe os dados reais de um negócio (extraídos do Google Maps) e devolve uma landing page COMPLETA.
+Você recebe os dados reais de um negócio (extraídos do Google Maps) e devolve a DIREÇÃO VISUAL e o conteúdo dessa página. Cada negócio precisa receber um site visivelmente diferente dos outros — a arquitetura da página, a paleta e o ritmo mudam conforme o segmento, o público e o clima do lugar.
 
-Responda SEMPRE com um único objeto JSON válido, sem texto antes ou depois, sem cercas de código, no formato:
+Responda SEMPRE com um único objeto JSON válido, sem texto antes ou depois, sem cercas de código:
 {
-  "template": "nome curto do estilo visual escolhido, como luxury-medical ou dark-barbershop",
+  "template": "nome curto do estilo, ex: clinica-sofisticada",
   "content": {
+    "layout": "editorial | immersive | showcase | minimal",
+    "mode": "light | dark",
+    "accent": "#RRGGBB",
+    "secondary": "#RRGGBB",
+    "motion": "subtle | rich",
     "headline": "...",
     "subheadline": "...",
     "about": "...",
     "services": ["...", "..."],
+    "serviceNotes": ["uma frase curta explicando cada serviço, na mesma ordem"],
     "differentials": ["...", "..."],
     "cta": "...",
-    "accent": "um hex de cor, ex #C8A24A",
     "visualStyle": "descrição curta da direção visual"
   }
 }
 
-Direção obrigatória:
-- Pense como uma experiência de produto premium, no estilo de uma landing page criada por uma ferramenta moderna de geração de interfaces.
-- O resultado será renderizado por um sistema visual com hero de impacto, imagem, cards, glow, profundidade, animações e CTA.
-- Escreva copy curta, visual e específica. Evite parágrafos longos e aparência de documento.
-- Escolha um template adequado ao nicho e uma direção visual coerente: editorial, tecnológico, sofisticado ou energético.
-- Gere entre 3 e 6 serviços e entre 3 e 4 diferenciais.
-- Se houver telefone, os botões de CTA devem apontar para https://wa.me/<numero só com dígitos, com 55 na frente>.
-- Português do Brasil. Copy concreta e específica ao negócio — nada de "Lorem ipsum" ou placeholder.
-- Nunca invente fatos: não crie preços, prêmios, anos de fundação ou depoimentos. Use apenas os dados fornecidos.
-- Design elegante e moderno, digno de um negócio premium. Nada de visual amador.
+Como escolher o LAYOUT (obrigatório escolher de forma consciente, nunca sempre o mesmo):
+- "editorial": tipografia serifada de revista, muito respiro, grid assimétrico, mosaico de fotos. Bom para restaurantes autorais, estúdios, arquitetura, moda, joalheria, hotelaria.
+- "immersive": escuro, foto em tela cheia com parallax, brilho na cor da marca, faixa animada, muitas animações. Bom para barbearias, academias, bares, tatuagem, night life, automotivo, tecnologia.
+- "showcase": o mais completo — herói + números + cards de serviço + galeria grande + sobre + bloco de contato. Bom para clínicas, odontologia, pet shops, oficinas, escolas, imobiliárias, prestadores de serviço em geral.
+- "minimal": branco, tipografia pequena, silêncio visual, poucas imagens. Bom para advocacia, contabilidade, consultoria, psicologia, estética discreta, marcas premium sóbrias.
+
+Como escolher as CORES:
+- accent e secondary devem sair da identidade provável do negócio e do segmento (ex.: verde profundo para clínica natural, âmbar para padaria, azul-petróleo para jurídico, vinho para barbearia). Não use sempre dourado.
+- "mode" escuro só quando combina com o clima do negócio; a maioria dos serviços de saúde e jurídico pede claro.
+
+Direção de conteúdo:
+- Copy curta, concreta e específica ao negócio. Português do Brasil.
+- 3 a 6 serviços, e um serviceNotes para CADA serviço, na mesma ordem (máx. 14 palavras cada).
+- 3 a 4 diferenciais.
+- Nunca invente fatos: nada de preços, prêmios, anos de fundação, depoimentos ou número de clientes. Use só os dados fornecidos.
+- Nada de "Lorem ipsum" ou placeholder.
 - Não gere HTML, CSS ou JavaScript. Retorne somente o JSON especificado.`;
 
 export type GenerateSiteInput = {
@@ -125,7 +138,14 @@ export type GenerateSiteInput = {
   lead: Lead;
   /** What the seller offers — steers tone, e.g. "Sites" vs "Automação". */
   sells: string;
+  /** Lets the generator pull the real photos of the place from Apify. */
+  apifyKey?: string | undefined;
 };
+
+function normalizeLayout(value: unknown): SiteLayout | undefined {
+  const v = typeof value === "string" ? value.toLowerCase().trim() : "";
+  return SITE_LAYOUTS.find((l) => l === v);
+}
 
 export type GeneratedSite = { template: string; content: SiteSection; html: string };
 
@@ -137,7 +157,7 @@ export const generateSite = createServerFn({ method: "POST" })
       apiKey: data.apiKey,
       system: SITE_SYSTEM,
       maxTokens: 16000,
-      prompt: `Crie a direção visual e o conteúdo estruturado da landing page deste negócio.\n\n${leadBrief(data.lead)}\n\nEsta página será usada como demonstração por alguém que vende ${data.sells || "sites"}. Ela precisa parecer uma landing page premium, visual e tecnológica à primeira vista.`,
+      prompt: `Crie a direção visual e o conteúdo estruturado da landing page deste negócio.\n\n${leadBrief(data.lead)}\n\nEsta página será usada como demonstração por alguém que vende ${data.sells || "sites"}. Ela será renderizada com as FOTOS REAIS do negócio, então escolha a arquitetura e as cores que melhor valorizam esse tipo de ambiente. Fuja do óbvio: um site igual ao do concorrente não vende.`,
     });
 
     let parsed: GeneratedSite;
@@ -150,6 +170,22 @@ export const generateSite = createServerFn({ method: "POST" })
     if (!parsed.template || !parsed.content?.headline || !Array.isArray(parsed.content.services)) {
       throw new Error("A IA não devolveu uma estrutura visual válida. Tente gerar novamente.");
     }
+    // Real photos of the place. Leads round-trip through the database, which
+    // does not persist the scraped image list, so we re-read them here.
+    const images =
+      data.lead.images && data.lead.images.length > 0
+        ? data.lead.images
+        : data.apifyKey
+          ? await fetchPlaceImages({
+              data: {
+                apiKey: data.apifyKey,
+                placeId: data.lead.placeId,
+                query: `${data.lead.name} ${data.lead.city}`.trim(),
+                location: data.lead.city,
+              },
+            })
+          : [];
+
     const content: SiteSection = {
       headline: parsed.content.headline,
       subheadline: parsed.content.subheadline ?? "",
@@ -159,6 +195,20 @@ export const generateSite = createServerFn({ method: "POST" })
       cta: parsed.content.cta ?? "Fale conosco",
       accent: parsed.content.accent ?? "#D5AD61",
       visualStyle: parsed.content.visualStyle,
+      layout: normalizeLayout(parsed.content.layout),
+      mode:
+        parsed.content.mode === "dark"
+          ? "dark"
+          : parsed.content.mode === "light"
+            ? "light"
+            : undefined,
+      secondary: parsed.content.secondary,
+      motion: parsed.content.motion === "subtle" ? "subtle" : "rich",
+      serviceNotes: Array.isArray(parsed.content.serviceNotes)
+        ? parsed.content.serviceNotes
+        : undefined,
+      images,
+      logo: data.lead.logo,
     };
     return {
       template: parsed.template,

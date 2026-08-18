@@ -220,7 +220,14 @@ export function StoreProvider({ children }: { children: ReactNode }) {
         const { provider, apiKey } = requireLlm();
 
         const generated = await generateSite({
-          data: { provider, apiKey, lead, sells: state.profile.sells },
+          data: {
+            provider,
+            apiKey,
+            lead,
+            sells: state.profile.sells,
+            // Lets the generator fetch the real photos of the place.
+            apifyKey: keyFor("apify"),
+          },
         });
 
         // Reuse the slug on regeneration so a published URL stays stable.

@@ -31,7 +31,45 @@ type ApifyPlace = {
   url?: string;
   additionalInfo?: unknown;
   instagrams?: string[];
+  imageUrl?: string | null;
+  imageUrls?: string[] | null;
+  images?: { imageUrl?: string }[] | null;
+  imageCategories?: unknown;
 };
+
+/**
+ * Google serves photos through a sizing suffix (`=w408-h306-k-no`). We rewrite
+ * it to a large crop so the generated landing pages get sharp hero images
+ * instead of thumbnails.
+ */
+function upsize(url: string, width = 1600): string {
+  if (!url.startsWith("http")) return url;
+  const cut = url.replace(/=[swh]\d+[^=]*$/, "");
+  return /googleusercontent|ggpht/.test(cut)
+    ? `${cut}=w${width}-h${Math.round(width * 0.66)}-k-no`
+    : url;
+}
+
+/** Photos of the place, de-duplicated and ordered with the cover first. */
+function pickImages(place: ApifyPlace, max = 10): string[] {
+  const raw = [
+    place.imageUrl ?? "",
+    ...(place.imageUrls ?? []),
+    ...(place.images ?? []).map((i) => i?.imageUrl ?? ""),
+  ].filter((u): u is string => Boolean(u && u.startsWith("http")));
+
+  const out: string[] = [];
+  const seen = new Set<string>();
+  for (const url of raw) {
+    const big = upsize(url);
+    const key = big.split("=")[0] ?? big;
+    if (seen.has(key)) continue;
+    seen.add(key);
+    out.push(big);
+    if (out.length >= max) break;
+  }
+  return out;
+}
 
 function pickInstagram(place: ApifyPlace): string | undefined {
   const first = place.instagrams?.[0];
@@ -63,6 +101,10 @@ export const scrapeLeads = createServerFn({ method: "POST" })
           language: "pt-BR",
           skipClosedPlaces: true,
           scrapeContacts: false,
+          // Real photos of each business — the generated landing pages are built
+          // around them instead of generic stock imagery.
+          maxImages: 10,
+          scrapeImageAuthors: false,
         }),
       },
     );
@@ -107,6 +149,7 @@ export const scrapeLeads = createServerFn({ method: "POST" })
         instagram,
         address: p.street?.trim() || p.address?.trim() || "",
         placeId: p.placeId,
+        images: pickImages(p),
       };
 
       const { score, reasons } = computeScore(partial);
@@ -124,4 +167,59 @@ export const scrapeLeads = createServerFn({ method: "POST" })
     // Rank first, then cut — otherwise the cap would keep whatever Apify
     // happened to return first rather than the best opportunities.
     return out.sort((a, b) => b.score - a.score).slice(0, filters.limit);
+  });
+
+/* -------------------------------------------------------------------------- */
+/*  Photos on demand                                                           */
+/* -------------------------------------------------------------------------- */
+
+export type PlaceImagesInput = {
+  apiKey: string;
+  placeId?: string | undefined;
+  /** Fallback lookup when no placeId was stored (older leads). */
+  query?: string | undefined;
+  location?: string | undefined;
+};
+
+/**
+ * Fetches the photos of a single business. Leads round-trip through the
+ * database, which does not keep the scraped image list, so site generation
+ * re-reads them here right before rendering. Never throws: a site without real
+ * photos still renders with the curated fallbacks.
+ */
+export const fetchPlaceImages = createServerFn({ method: "POST" })
+  .validator((d: PlaceImagesInput) => d)
+  .handler(async ({ data }): Promise<string[]> => {
+    const { apiKey, placeId, query, location } = data;
+    if (!apiKey || (!placeId && !query)) return [];
+
+    const body: Record<string, unknown> = {
+      maxCrawledPlacesPerSearch: 1,
+      language: "pt-BR",
+      maxImages: 12,
+      scrapeImageAuthors: false,
+      scrapeContacts: false,
+    };
+    if (placeId) {
+      body["startUrls"] = [{ url: `https://www.google.com/maps/place/?q=place_id:${placeId}` }];
+    } else {
+      body["searchStringsArray"] = [query];
+      if (location) body["locationQuery"] = location;
+    }
+
+    try {
+      const res = await fetch(
+        `https://api.apify.com/v2/acts/${ACTOR}/run-sync-get-dataset-items?token=${encodeURIComponent(apiKey)}`,
+        {
+          method: "POST",
+          headers: { "content-type": "application/json" },
+          body: JSON.stringify(body),
+        },
+      );
+      if (!res.ok) return [];
+      const places = (await res.json()) as ApifyPlace[];
+      return places[0] ? pickImages(places[0], 12) : [];
+    } catch {
+      return [];
+    }
   });

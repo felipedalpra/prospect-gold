@@ -23,6 +23,11 @@ export const STAGES: Stage[] = [
 
 export type ScoreReason = { label: string; points: number };
 
+/** The distinct page architectures the renderer knows how to build. */
+export type SiteLayout = "editorial" | "immersive" | "showcase" | "minimal";
+
+export const SITE_LAYOUTS: SiteLayout[] = ["editorial", "immersive", "showcase", "minimal"];
+
 export type SiteSection = {
   headline: string;
   subheadline: string;
@@ -32,6 +37,20 @@ export type SiteSection = {
   cta: string;
   accent: string;
   visualStyle?: string | undefined;
+  /** Page architecture. Chosen by the AI per segment, never a single default. */
+  layout?: SiteLayout | undefined;
+  /** Light or dark canvas — part of the per-business visual identity. */
+  mode?: "light" | "dark" | undefined;
+  /** Second brand colour, used for gradients and accents. */
+  secondary?: string | undefined;
+  /** How much motion the page uses. */
+  motion?: "subtle" | "rich" | undefined;
+  /** Real photos of the business (Apify / Google Maps), first is the hero. */
+  images?: string[] | undefined;
+  /** Logo/avatar URL of the business when one could be resolved. */
+  logo?: string | undefined;
+  /** Short caption per service card, written by the AI. */
+  serviceNotes?: string[] | undefined;
 };
 
 export type LeadSite = {
@@ -61,6 +80,10 @@ export type Lead = {
   instagram?: string | undefined;
   address: string;
   placeId?: string | undefined;
+  /** Real photos of the place, scraped from Google Maps. */
+  images?: string[] | undefined;
+  /** Business logo / profile image when Google exposes one. */
+  logo?: string | undefined;
   score: number;
   reasons: ScoreReason[];
   stage: Stage;
