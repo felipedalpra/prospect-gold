@@ -42,6 +42,51 @@ function hex(value: string | undefined, fallback: string): string {
   return value && /^#[0-9a-f]{6}$/i.test(value.trim()) ? value.trim() : fallback;
 }
 
+/**
+ * Picks from a list starting at the AI's choice and stepping by the lead's own
+ * seed. The AI's taste sets the starting point; the seed guarantees that two
+ * businesses in the same segment — which the AI almost always answers
+ * identically for — never land on the same value.
+ */
+function rotate<T>(list: readonly T[], current: T | undefined, seed: number): T {
+  const at = list.indexOf(current as T);
+  return list[(((at < 0 ? 0 : at) + seed) % list.length + list.length) % list.length]!;
+}
+
+/**
+ * Rotates a colour's hue while keeping its saturation and lightness, so the
+ * AI's read of the business survives but the exact palette does not repeat
+ * across a segment.
+ */
+function shiftHue(color: string, degrees: number): string {
+  const r = parseInt(color.slice(1, 3), 16) / 255;
+  const g = parseInt(color.slice(3, 5), 16) / 255;
+  const b = parseInt(color.slice(5, 7), 16) / 255;
+  const max = Math.max(r, g, b);
+  const min = Math.min(r, g, b);
+  const l = (max + min) / 2;
+  const d = max - min;
+  if (d === 0) return color;
+  const s = l > 0.5 ? d / (2 - max - min) : d / (max + min);
+  let h =
+    max === r ? (g - b) / d + (g < b ? 6 : 0) : max === g ? (b - r) / d + 2 : (r - g) / d + 4;
+  h = (((h / 6) * 360 + degrees) % 360 + 360) % 360 / 360;
+  const q = l < 0.5 ? l * (1 + s) : l + s - l * s;
+  const p = 2 * l - q;
+  const channel = (t: number): number => {
+    const x = (t + 1) % 1;
+    const v =
+      x < 1 / 6 ? p + (q - p) * 6 * x : x < 1 / 2 ? q : x < 2 / 3 ? p + (q - p) * (2 / 3 - x) * 6 : p;
+    return Math.round(v * 255);
+  };
+  return (
+    "#" +
+    [channel(h + 1 / 3), channel(h), channel(h - 1 / 3)]
+      .map((v) => v.toString(16).padStart(2, "0"))
+      .join("")
+  );
+}
+
 /** Perceived luminance — decides whether text on the accent is black or white. */
 function readableOn(color: string): string {
   const r = parseInt(color.slice(1, 3), 16);
@@ -107,7 +152,27 @@ const POOLS: { match: RegExp; photos: string[] }[] = [
     ],
   },
   {
-    match: /dent|odonto|clínic|clinic|médic|medic|saúde|saude|fisioter|psic|laborat/i,
+    // Therapy is not a medical-equipment business: consulting rooms, quiet
+    // interiors and human gestures — never a dentist's chair or a lab coat.
+    // Kept above the clinical pool so "Psicólogo" never falls into it.
+    match:
+      /psic|psiqui|psican|neuropsi|saúde mental|saude mental|terapia de casal|terapia familiar/i,
+    photos: [
+      "1519710164239-da123dc03ef4",
+      "1544027993-37dbfe43562a",
+      "1522708323590-d24dbb6b0267",
+      "1493663284031-b7e3aefcae8e",
+      "1586023492125-27b2c045efd7",
+      "1517971129774-8a2b38fa128e",
+      "1567016432779-094069958ea5",
+      "1512389142860-9c449e58a543",
+      "1600607687920-4e2a09cf159d",
+      "1490578474895-699cd4e2cf59",
+      "1517842645767-c639042777db",
+    ],
+  },
+  {
+    match: /dent|odonto|clínic|clinic|médic|medic|saúde|saude|fisioter|laborat/i,
     photos: [
       "1629909613654-28e377c37b09",
       "1588776814546-1ffcf47267a5",
@@ -190,7 +255,10 @@ const NEUTRAL = [
  */
 function fallbackImages(category: string, seed: number, count: number, offset = 0): string[] {
   const matched = POOLS.find((p) => p.match.test(category))?.photos ?? [];
-  const pool = matched.length > 0 ? [...matched, ...NEUTRAL] : NEUTRAL;
+  // The neutral office shots only pad a segment pool that cannot fill the page
+  // on its own — they are the last resort, never mixed in by default.
+  const pool =
+    matched.length >= count ? matched : matched.length > 0 ? [...matched, ...NEUTRAL] : NEUTRAL;
   const strides = [1, 3, 5, 7];
   const stride = strides[seed % strides.length]!;
   const start = seed % pool.length;
@@ -271,18 +339,47 @@ function defaultBlocks(layout: SiteLayout, seed: number): SiteBlock[] {
   return [{ kind: "hero", variant: hero }, ...extras.slice(0, 1), ...ordered, ...extras.slice(1)];
 }
 
+/** The treatments each kind of block can be drawn with. */
+const VARIANTS: Record<SiteBlockKind, readonly string[]> = {
+  hero: ["split", "full", "stacked", "frame"],
+  stats: ["bar", "cards"],
+  services: ["cards", "list", "grid", "alternating"],
+  gallery: ["mosaic", "strip", "grid", "duo"],
+  about: ["split", "wide", "overlap"],
+  differentials: ["rows", "cards", "icons"],
+  process: ["steps", "timeline"],
+  faq: ["list"],
+  quote: ["band"],
+  cta: ["band", "split"],
+};
+
 function normalizeBlocks(
   raw: SiteBlock[] | undefined,
   layout: SiteLayout,
   seed: number,
 ): SiteBlock[] {
-  if (!Array.isArray(raw) || raw.length === 0) return defaultBlocks(layout, seed);
-  const clean = raw.filter((b) => b && SITE_BLOCK_KINDS.includes(b.kind));
-  if (clean.length < 3) return defaultBlocks(layout, seed);
-  // Exactly one hero, always first — every other order the AI asks for is kept.
-  const hero = clean.find((b) => b.kind === "hero") ?? { kind: "hero" as const, variant: "split" };
-  const rest = clean.filter((b) => b.kind !== "hero");
-  return [hero, ...rest].slice(0, 10);
+  const composed =
+    !Array.isArray(raw) || raw.length === 0
+      ? defaultBlocks(layout, seed)
+      : (() => {
+          const clean = raw.filter((b) => b && SITE_BLOCK_KINDS.includes(b.kind));
+          if (clean.length < 3) return defaultBlocks(layout, seed);
+          // Exactly one hero, always first. The middle is rotated by the lead's
+          // own seed, because the AI hands every business in a segment the same
+          // running order.
+          const hero =
+            clean.find((b) => b.kind === "hero") ?? ({ kind: "hero", variant: "split" } as SiteBlock);
+          const rest = clean.filter((b) => b.kind !== "hero").slice(0, 9);
+          const tail = rest.length > 1 && rest[rest.length - 1]!.kind === "cta" ? rest.pop()! : null;
+          const cut = rest.length > 1 ? seed % rest.length : 0;
+          const middle = [...rest.slice(cut), ...rest.slice(0, cut)];
+          return [hero, ...middle, ...(tail ? [tail] : [])];
+        })();
+  // Same reason, one level down: the treatment of each section is stepped from
+  // whatever the AI asked for, so no two pages are drawn the same way.
+  return composed
+    .slice(0, 10)
+    .map((b, i) => ({ ...b, variant: rotate(VARIANTS[b.kind], b.variant, seed + i * 3) }));
 }
 
 /**
@@ -303,14 +400,16 @@ function identityOf(lead: Lead, content: SiteSection, template: string, remix = 
           shape: undefined,
         } as SiteSection)
       : content;
-  const accent = hex(chosen.accent, "#C8A24A");
-  const secondary = hex(chosen.secondary, accent);
+  // The AI reliably answers "psicólogo" (and every other segment) with the same
+  // palette, so its colour is a starting hue, not the final one.
+  const accent = shiftHue(hex(chosen.accent, "#C8A24A"), ((seed % 9) - 4) * 14);
+  const secondary = shiftHue(hex(chosen.secondary, accent), (((seed >> 3) % 9) - 4) * 14);
 
-  const layout: SiteLayout =
+  const layoutBase: SiteLayout =
     chosen.layout && LAYOUTS.includes(chosen.layout)
       ? chosen.layout
-      : (LAYOUTS.find((l) => template.toLowerCase().includes(l)) ??
-        LAYOUTS[seed % LAYOUTS.length]!);
+      : (LAYOUTS.find((l) => template.toLowerCase().includes(l)) ?? LAYOUTS[0]!);
+  const layout = rotate(LAYOUTS, layoutBase, seed);
 
   const blocks = normalizeBlocks(chosen.blocks, layout, seed);
 
@@ -321,24 +420,28 @@ function identityOf(lead: Lead, content: SiteSection, template: string, remix = 
       ? real.slice(0, wanted)
       : [...real, ...fallbackImages(lead.category, seed, wanted - real.length, real.length)];
 
-  const typeface: SiteTypeface =
-    chosen.typeface && SITE_TYPEFACES.includes(chosen.typeface)
-      ? chosen.typeface
-      : SITE_TYPEFACES[seed % SITE_TYPEFACES.length]!;
+  const typeface = rotate(
+    SITE_TYPEFACES,
+    chosen.typeface && SITE_TYPEFACES.includes(chosen.typeface) ? chosen.typeface : undefined,
+    seed,
+  );
+
+  const shapes = ["sharp", "soft", "round"] as const;
 
   return {
     layout,
     typeface,
-    shape:
+    shape: rotate(
+      shapes,
       chosen.shape === "sharp" || chosen.shape === "soft" || chosen.shape === "round"
         ? chosen.shape
-        : (["sharp", "soft", "round"] as const)[seed % 3]!,
+        : undefined,
+      seed,
+    ),
+    // A dark page is a strong choice, so it is kept when the AI asks for one,
+    // and otherwise handed to a minority of leads rather than to a whole layout.
     mode:
-      chosen.mode === "light" || chosen.mode === "dark"
-        ? chosen.mode
-        : layout === "immersive"
-          ? "dark"
-          : "light",
+      chosen.mode === "dark" || layout === "immersive" || seed % 5 === 0 ? "dark" : "light",
     accent,
     secondary,
     onAccent: readableOn(accent),
