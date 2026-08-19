@@ -10,6 +10,7 @@ import {
   Search,
   Users,
   Megaphone,
+  MessagesSquare,
   Globe,
   KanbanSquare,
   Settings,
@@ -36,9 +37,10 @@ const NAV = [
   { to: "/app", label: "Dashboard", icon: LayoutDashboard, exact: true },
   { to: "/app/prospectar", label: "Prospectar", icon: Search },
   { to: "/app/leads", label: "Leads", icon: Users },
-  { to: "/app/campanhas", label: "Campanhas", icon: Megaphone },
   { to: "/app/sites", label: "Sites", icon: Globe },
+  { to: "/app/abordagens", label: "Abordagens", icon: MessagesSquare },
   { to: "/app/pipeline", label: "Pipeline", icon: KanbanSquare },
+  { to: "/app/campanhas", label: "Campanhas", icon: Megaphone },
   { to: "/app/configuracoes", label: "Configurações", icon: Settings },
 ] as const;
 
@@ -157,6 +159,19 @@ function AppLayout() {
             ))}
           </div>
         </div>
+        {state.queue.length > 0 && (
+          <div className="flex flex-wrap items-center gap-3 border-b border-primary/25 bg-primary/8 px-5 py-2.5 text-xs lg:px-8">
+            <span className="h-3.5 w-3.5 animate-spin rounded-full border-2 border-primary/25 border-t-primary" />
+            <span>
+              <b className="text-primary">{state.queue.length}</b> tarefa(s) na fila
+              {state.working ? " — trabalhando agora" : " — retomando"}.
+            </span>
+            <span className="text-muted-foreground">
+              Pode fechar a aba: a fila continua de onde parou na próxima vez que você abrir.
+            </span>
+          </div>
+        )}
+
         <main className="min-w-0 flex-1 p-5 lg:p-8">
           <Outlet />
         </main>

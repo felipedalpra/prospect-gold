@@ -1,4 +1,12 @@
-import type { Lead, SiteLayout, SiteSection } from "./types";
+import type {
+  Lead,
+  SiteBlock,
+  SiteBlockKind,
+  SiteLayout,
+  SiteSection,
+  SiteTypeface,
+} from "./types";
+import { SITE_BLOCK_KINDS, SITE_TYPEFACES } from "./types";
 
 /* -------------------------------------------------------------------------- */
 /*  Helpers                                                                    */
@@ -175,18 +183,38 @@ const NEUTRAL = [
   "1556761175-b413da4baf72",
 ];
 
-function fallbackImages(category: string, seed: number, count: number): string[] {
-  const pool = POOLS.find((p) => p.match.test(category))?.photos ?? NEUTRAL;
+/**
+ * Stock only ever fills the gaps left by the business's own photos. The pool is
+ * walked with a seeded start AND a seeded stride, so two businesses in the same
+ * segment get different photos in a different order rather than the same three.
+ */
+function fallbackImages(category: string, seed: number, count: number, offset = 0): string[] {
+  const matched = POOLS.find((p) => p.match.test(category))?.photos ?? [];
+  const pool = matched.length > 0 ? [...matched, ...NEUTRAL] : NEUTRAL;
+  const strides = [1, 3, 5, 7];
+  const stride = strides[seed % strides.length]!;
   const start = seed % pool.length;
-  return Array.from({ length: count }, (_, i) => U + pool[(start + i) % pool.length] + Q);
+  const out: string[] = [];
+  const seen = new Set<string>();
+  for (let i = 0; out.length < count && i < pool.length * 2; i++) {
+    const id = pool[(start + (i + offset) * stride) % pool.length]!;
+    if (seen.has(id)) continue;
+    seen.add(id);
+    out.push(U + id + Q);
+  }
+  return out;
 }
-
 /* -------------------------------------------------------------------------- */
 /*  Identity                                                                   */
+/*  Layout, typography, colour and shape form the "visual system"; the block   */
+/*  list below decides which sections exist and in what order. Two businesses  */
+/*  in the same segment differ on both axes, not just on the copy.             */
 /* -------------------------------------------------------------------------- */
 
 type Identity = {
   layout: SiteLayout;
+  typeface: SiteTypeface;
+  shape: "sharp" | "soft" | "round";
   mode: "light" | "dark";
   accent: string;
   secondary: string;
@@ -196,34 +224,118 @@ type Identity = {
   mono: string;
   motion: "subtle" | "rich";
   seed: number;
+  blocks: SiteBlock[];
 };
 
 const LAYOUTS: SiteLayout[] = ["editorial", "immersive", "showcase", "minimal"];
 
-function identityOf(lead: Lead, content: SiteSection, template: string): Identity {
-  const seed = hashOf(lead.id || lead.placeId || lead.name);
-  const accent = hex(content.accent, "#C8A24A");
-  const secondary = hex(content.secondary, accent);
+/** How many photos a page wants, given how image-hungry its blocks are. */
+function imageBudget(blocks: SiteBlock[]): number {
+  let n = 2;
+  for (const b of blocks) {
+    if (b.kind === "gallery")
+      n += b.variant === "grid" ? 6 : b.variant === "strip" ? 5 : b.variant === "duo" ? 2 : 4;
+    if (b.kind === "about") n += 1;
+    if (b.kind === "services" && b.variant === "alternating") n += 2;
+  }
+  return Math.min(12, Math.max(3, n));
+}
 
-  // The AI picks the architecture; when it doesn't, the seed keeps variety.
+/**
+ * Fallback composition for sites generated before the AI started choosing one,
+ * and for responses that omit it. Seeded so it still varies per business.
+ */
+function defaultBlocks(layout: SiteLayout, seed: number): SiteBlock[] {
+  const pick = <T>(list: T[], salt: number): T => list[(seed + salt) % list.length]!;
+  const hero = pick(["split", "full", "stacked", "frame"], 1);
+  const services = pick(["cards", "list", "alternating", "grid"], 2);
+  const gal = pick(["mosaic", "strip", "grid", "duo"], 3);
+  const middle: SiteBlock[] = [
+    { kind: "services", variant: services },
+    { kind: "gallery", variant: gal },
+    { kind: "about", variant: pick(["split", "wide", "overlap"], 4) },
+    { kind: "differentials", variant: pick(["rows", "cards", "icons"], 5) },
+  ];
+  // Rotate the middle so the page does not always run services → gallery.
+  const cut = seed % middle.length;
+  const ordered = [...middle.slice(cut), ...middle.slice(0, cut)];
+  const extras: SiteBlock[] =
+    layout === "minimal"
+      ? [{ kind: "quote", variant: "band" }]
+      : [
+          { kind: "stats", variant: pick(["bar", "cards"], 6) },
+          seed % 2 === 0
+            ? { kind: "quote", variant: "band" }
+            : { kind: "cta", variant: pick(["band", "split"], 7) },
+        ];
+  return [{ kind: "hero", variant: hero }, ...extras.slice(0, 1), ...ordered, ...extras.slice(1)];
+}
+
+function normalizeBlocks(
+  raw: SiteBlock[] | undefined,
+  layout: SiteLayout,
+  seed: number,
+): SiteBlock[] {
+  if (!Array.isArray(raw) || raw.length === 0) return defaultBlocks(layout, seed);
+  const clean = raw.filter((b) => b && SITE_BLOCK_KINDS.includes(b.kind));
+  if (clean.length < 3) return defaultBlocks(layout, seed);
+  // Exactly one hero, always first — every other order the AI asks for is kept.
+  const hero = clean.find((b) => b.kind === "hero") ?? { kind: "hero" as const, variant: "split" };
+  const rest = clean.filter((b) => b.kind !== "hero");
+  return [hero, ...rest].slice(0, 10);
+}
+
+/**
+ * `remix` produces an alternative take on the same copy: the AI's architecture
+ * and typography are set aside and re-derived from a shifted seed, so the
+ * seller gets a genuinely different page to choose from without paying for a
+ * second generation.
+ */
+function identityOf(lead: Lead, content: SiteSection, template: string, remix = 0): Identity {
+  const seed = hashOf(lead.id || lead.placeId || lead.name) + remix * 7919;
+  const chosen =
+    remix > 0
+      ? ({
+          ...content,
+          blocks: undefined,
+          layout: undefined,
+          typeface: undefined,
+          shape: undefined,
+        } as SiteSection)
+      : content;
+  const accent = hex(chosen.accent, "#C8A24A");
+  const secondary = hex(chosen.secondary, accent);
+
   const layout: SiteLayout =
-    content.layout && LAYOUTS.includes(content.layout)
-      ? content.layout
+    chosen.layout && LAYOUTS.includes(chosen.layout)
+      ? chosen.layout
       : (LAYOUTS.find((l) => template.toLowerCase().includes(l)) ??
         LAYOUTS[seed % LAYOUTS.length]!);
 
-  const real = (content.images ?? lead.images ?? []).filter((u) => /^https?:\/\//.test(u));
-  const wanted = layout === "showcase" ? 9 : layout === "minimal" ? 3 : 6;
+  const blocks = normalizeBlocks(chosen.blocks, layout, seed);
+
+  const real = (chosen.images ?? lead.images ?? []).filter((u) => /^https?:\/\//.test(u));
+  const wanted = imageBudget(blocks);
   const images =
     real.length >= wanted
       ? real.slice(0, wanted)
-      : [...real, ...fallbackImages(lead.category, seed, wanted - real.length)];
+      : [...real, ...fallbackImages(lead.category, seed, wanted - real.length, real.length)];
+
+  const typeface: SiteTypeface =
+    chosen.typeface && SITE_TYPEFACES.includes(chosen.typeface)
+      ? chosen.typeface
+      : SITE_TYPEFACES[seed % SITE_TYPEFACES.length]!;
 
   return {
     layout,
+    typeface,
+    shape:
+      chosen.shape === "sharp" || chosen.shape === "soft" || chosen.shape === "round"
+        ? chosen.shape
+        : (["sharp", "soft", "round"] as const)[seed % 3]!,
     mode:
-      content.mode === "light" || content.mode === "dark"
-        ? content.mode
+      chosen.mode === "light" || chosen.mode === "dark"
+        ? chosen.mode
         : layout === "immersive"
           ? "dark"
           : "light",
@@ -231,10 +343,11 @@ function identityOf(lead: Lead, content: SiteSection, template: string): Identit
     secondary,
     onAccent: readableOn(accent),
     images,
-    logo: content.logo ?? lead.logo,
+    logo: chosen.logo ?? lead.logo,
     mono: initials(lead.name),
-    motion: content.motion === "subtle" ? "subtle" : "rich",
+    motion: chosen.motion === "subtle" ? "subtle" : "rich",
     seed,
+    blocks,
   };
 }
 
@@ -298,29 +411,6 @@ function logoMark(lead: Lead, id: Identity, size = 40): string {
       '">'
     );
   return '<span class="mono">' + esc(id.mono) + "</span>";
-}
-
-function gallery(id: Identity, lead: Lead, from: number, count: number): string {
-  return id.images
-    .slice(from, from + count)
-    .map(
-      (src, i) =>
-        '<figure class="shot rv" data-d="' +
-        ((i % 5) + 1) +
-        '"><img src="' +
-        esc(src) +
-        '" alt="' +
-        esc(lead.name) +
-        " — foto " +
-        (i + 1) +
-        '" loading="lazy"></figure>',
-    )
-    .join("");
-}
-
-function serviceNote(content: SiteSection, i: number): string {
-  const note = content.serviceNotes?.[i];
-  return note ? esc(note) : "";
 }
 
 function mapsHref(lead: Lead): string {
@@ -429,471 +519,649 @@ function mapFooter(lead: Lead, id: Identity): string {
   );
 }
 
-type Parts = { css: string; body: string };
-
 /* -------------------------------------------------------------------------- */
 /*  Layout 1 — Editorial                                                       */
 /*  Light, magazine typography, asymmetric grid, restrained motion.            */
 /* -------------------------------------------------------------------------- */
 
-function editorial(lead: Lead, c: SiteSection, id: Identity): Parts {
-  const cta = phoneHref(lead.phone);
-  const label = ctaLabel(c.cta);
-  const css = `
-body{font-family:"Inter",ui-sans-serif,system-ui,sans-serif;background:var(--bg)}
-.serif{font-family:"Georgia","Times New Roman",serif;font-weight:400;letter-spacing:-.02em}
-.nav{display:flex;align-items:center;justify-content:space-between;padding:26px 0;position:sticky;top:0;z-index:20;background:color-mix(in srgb,var(--bg) 82%,transparent);backdrop-filter:blur(12px);transition:box-shadow .3s}
-.nav.stuck{box-shadow:0 1px 0 var(--line)}
-.brand{display:flex;align-items:center;gap:12px;font-weight:700;letter-spacing:-.02em;font-size:16px}
-.mono{width:38px;height:38px;border-radius:10px;display:grid;place-items:center;background:var(--accent);color:var(--on-accent);font-size:14px;font-weight:800;letter-spacing:.02em}
-.logoimg{width:38px;height:38px;border-radius:10px;object-fit:cover}
-.links{display:flex;gap:26px;font-size:14px;color:var(--muted)}.links a:hover{color:var(--ink)}
-.navbtn{padding:11px 18px;font-size:13px;border:1px solid var(--ink);background:transparent}
-.navbtn:hover{background:var(--ink);color:var(--bg)}
-.hero{padding:56px 0 40px;display:grid;grid-template-columns:1.05fr .95fr;gap:56px;align-items:center}
-.hero>*{min-width:0}
-.hero h1{font-size:clamp(46px,6.4vw,86px);line-height:.95;margin:20px 0 0}
-.hero h1 em{font-style:italic;color:var(--accent)}
-.sub{margin-top:26px;font-size:19px;line-height:1.65;color:var(--muted);max-width:46ch}
-.acts{display:flex;gap:12px;flex-wrap:wrap;margin-top:32px}
-.primary{background:var(--ink);color:var(--bg);padding:15px 24px;font-size:14px}
-.ghost{padding:15px 24px;font-size:14px;border:1px solid var(--line)}
-.heroshot{position:relative}
-.heroshot img{width:100%;height:min(64vh,560px);object-fit:cover;border-radius:4px}
-.rule{display:flex;gap:30px;border-top:1px solid var(--line);border-bottom:1px solid var(--line);margin-top:56px;padding:22px 0;font-size:13px;color:var(--muted);flex-wrap:wrap}
-.rule b{color:var(--ink)}
-.sec{padding:110px 0}
-.sechead{display:grid;grid-template-columns:1fr 1fr;gap:40px;align-items:end;margin-bottom:54px}
-.sechead h2{font-size:clamp(32px,4.4vw,56px);line-height:1.02}
-.sechead p{color:var(--muted);line-height:1.75;font-size:17px}
-.list{border-top:1px solid var(--line)}
-.item{display:grid;grid-template-columns:70px 1fr 1.1fr;gap:26px;padding:30px 4px;border-bottom:1px solid var(--line);align-items:baseline;transition:padding-left .35s,background .35s}
-.item:hover{padding-left:18px;background:var(--bg2)}
-.item .n{color:var(--accent);font-size:13px;font-weight:700;letter-spacing:.1em}
-.item h3{font-size:clamp(21px,2.4vw,30px);line-height:1.15;font-weight:500}
-.item p{color:var(--muted);line-height:1.7;font-size:15px}
-.mosaic{display:grid;grid-template-columns:repeat(6,1fr);grid-auto-rows:210px;gap:14px}
-.mosaic .shot:nth-child(1){grid-column:span 4;grid-row:span 2}
-.mosaic .shot:nth-child(2),.mosaic .shot:nth-child(3){grid-column:span 2}
-.mosaic .shot:nth-child(4),.mosaic .shot:nth-child(5){grid-column:span 3}
-.shot{overflow:hidden;border-radius:4px;background:var(--bg2)}
-.shot img{width:100%;height:100%;object-fit:cover;transition:transform 1.1s cubic-bezier(.2,.7,.3,1)}
-.shot:hover img{transform:scale(1.06)}
-.about{display:grid;grid-template-columns:1fr 1fr;gap:70px;align-items:center}.about>*{min-width:0}
-.about p{font-size:18px;line-height:1.85;color:var(--muted)}
-.diffs{margin-top:34px;display:grid;gap:0}
-.diffs li{display:flex;gap:16px;padding:18px 0;border-bottom:1px solid var(--line);align-items:baseline}
-.diffs i{font-style:normal;color:var(--accent)}
-.score{border:1px solid var(--line);padding:44px;border-radius:4px;background:var(--bg2)}
-.score .big{font-size:96px;line-height:.9;letter-spacing:-.05em}
-.score .lab{color:var(--muted);margin-top:16px;line-height:1.6}
-.cta{background:var(--bg2);border-radius:4px;padding:88px 40px;text-align:center}
-.cta h2{font-size:clamp(34px,5vw,62px);line-height:1.02;max-width:16ch;margin-inline:auto}
-.cta p{color:var(--muted);margin:22px auto 32px;max-width:52ch;line-height:1.75}
-.foot{display:flex;justify-content:space-between;gap:20px;flex-wrap:wrap;padding:34px 0 56px;border-top:1px solid var(--line);color:var(--muted);font-size:13px;margin-top:100px}
-@media(max-width:900px){.links{display:none}.nav{padding:18px 0}.hero,.sechead,.about{grid-template-columns:1fr;gap:34px}.hero{padding-top:26px}.heroshot img{height:52vh}.sec{padding:74px 0}.item{grid-template-columns:44px 1fr;gap:14px}.item p{grid-column:2}.mosaic{grid-template-columns:repeat(2,1fr);grid-auto-rows:150px}.mosaic .shot:nth-child(n){grid-column:span 1;grid-row:span 1}.mosaic .shot:nth-child(1){grid-column:span 2}.cta{padding:56px 22px}}`;
-
-  const body = `
-<header class="wrap nav" data-nav><a class="brand" href="#top">${logoMark(lead, id)}${esc(lead.name)}</a>
-<nav class="links"><a href="#servicos">Serviços</a><a href="#galeria">Galeria</a><a href="#sobre">Sobre</a><a href="#contato">Contato</a></nav>
-<a class="btn navbtn" href="${cta}">${esc(label)}</a></header>
-<main id="top">
-<section class="wrap hero">
-<div><div class="eyebrow">${esc(lead.category)} · ${esc(lead.city)}</div>
-<h1 class="serif">${esc(c.headline)}</h1>
-<p class="sub">${esc(c.subheadline)}</p>
-<div class="acts"><a class="btn primary" href="${cta}">${esc(label)}</a><a class="btn ghost" href="#servicos">Ver serviços</a></div></div>
-<div class="heroshot rv"><img src="${esc(id.images[0] ?? "")}" alt="${esc(lead.name)}" loading="eager"></div>
-</section>
-<div class="wrap"><div class="rule"><span><b>${lead.rating.toFixed(1)}</b> no Google · ${lead.reviews} avaliações</span><span><b>Local</b> ${esc(lead.address || lead.city)}</span>${lead.instagram ? `<span><b>Instagram</b> ${esc(lead.instagram)}</span>` : ""}</div></div>
-
-<section class="sec wrap" id="servicos">
-<div class="sechead"><div><div class="eyebrow">O que fazemos</div><h2 class="serif rv">Serviços</h2></div><p class="rv">${esc(c.about)}</p></div>
-<div class="list">${c.services
-    .filter(Boolean)
-    .slice(0, 6)
-    .map(
-      (s, i) =>
-        `<article class="item rv"><span class="n">${String(i + 1).padStart(2, "0")}</span><h3 class="serif">${esc(s)}</h3><p>${serviceNote(c, i)}</p></article>`,
-    )
-    .join("")}</div></section>
-
-<section class="sec wrap" id="galeria">
-<div class="sechead"><div><div class="eyebrow">Por dentro</div><h2 class="serif rv">O ambiente</h2></div><p class="rv">Imagens reais de ${esc(lead.name)}.</p></div>
-<div class="mosaic">${gallery(id, lead, 1, 5)}</div></section>
-
-<section class="sec wrap" id="sobre"><div class="about">
-<div><div class="eyebrow">Por que escolher</div><h2 class="serif rv" style="font-size:clamp(30px,4vw,52px);margin:12px 0 24px">Detalhes que fazem diferença.</h2>
-<p class="rv">${esc(c.about)}</p>
-<ul class="diffs">${c.differentials
-    .filter(Boolean)
-    .slice(0, 4)
-    .map((d, i) => `<li class="rv" data-d="${i + 1}"><i>—</i><span>${esc(d)}</span></li>`)
-    .join("")}</ul></div>
-<div class="score rv"><div class="big serif">${lead.rating.toFixed(1)}</div><div class="lab">de avaliação média no Google,<br>com ${lead.reviews} avaliações públicas.</div></div>
-</div></section>
-
-</main>
-${whatsappFab(lead, label)}
-${mapFooter(lead, id)}`;
-
-  return { css, body };
-}
-
 /* -------------------------------------------------------------------------- */
-/*  Layout 2 — Immersive                                                       */
-/*  Dark, full-bleed photography, parallax, marquee, heavy motion.             */
+/*  Visual system                                                              */
 /* -------------------------------------------------------------------------- */
 
-function immersive(lead: Lead, c: SiteSection, id: Identity): Parts {
-  const cta = phoneHref(lead.phone);
-  const label = ctaLabel(c.cta);
-  const marquee = [...c.services.filter(Boolean), esc(lead.city)]
-    .slice(0, 8)
-    .map((s) => `<span>${esc(s)}</span><i>✦</i>`)
-    .join("");
-  const css = `
-body{font-family:"Inter",ui-sans-serif,system-ui,sans-serif}
-.nav{position:fixed;inset:0 0 auto;z-index:30;display:flex;align-items:center;justify-content:space-between;padding:18px max(22px,calc((100vw - 1200px)/2));transition:background .4s,backdrop-filter .4s,padding .4s}
-.nav.stuck{background:color-mix(in srgb,var(--bg) 78%,transparent);backdrop-filter:blur(16px);padding-block:12px;border-bottom:1px solid var(--line)}
-.brand{display:flex;align-items:center;gap:12px;font-weight:750;letter-spacing:-.03em}
-.mono{width:38px;height:38px;border-radius:50%;display:grid;place-items:center;border:1px solid var(--accent);color:var(--accent);font-weight:800;font-size:13px;box-shadow:0 0 30px color-mix(in srgb,var(--accent) 45%,transparent)}
-.logoimg{width:38px;height:38px;border-radius:50%;object-fit:cover}
-.links{display:flex;gap:26px;font-size:13px;color:var(--muted)}.links a:hover{color:var(--accent)}
-.navbtn{border:1px solid color-mix(in srgb,var(--accent) 55%,transparent);color:var(--accent);padding:11px 18px;font-size:12px}
-.navbtn:hover{background:var(--accent);color:var(--on-accent)}
-.stage{position:relative;min-height:100svh;display:grid;align-items:center;overflow:hidden}
-.stagebg{position:absolute;inset:-12% 0 -12%;z-index:0}
-.stagebg img{width:100%;height:124%;object-fit:cover;filter:saturate(.85) contrast(1.05) brightness(.55)}
-.stage:after{content:"";position:absolute;inset:0;z-index:1;background:radial-gradient(90% 70% at 20% 30%,color-mix(in srgb,var(--accent) 26%,transparent),transparent 60%),linear-gradient(180deg,rgba(6,6,7,.55),rgba(6,6,7,.35) 40%,var(--bg))}
-.stageinner{position:relative;z-index:2;padding:120px 0 90px}
-.stage h1{font-size:clamp(48px,9vw,132px);line-height:.9;letter-spacing:-.055em;margin:18px 0 0;max-width:16ch;font-weight:760}
-.stage h1 em{font-style:normal;color:var(--accent);display:inline-block;animation:glow 4.5s ease-in-out infinite}
-@keyframes glow{50%{text-shadow:0 0 44px color-mix(in srgb,var(--accent) 65%,transparent)}}
-.sub{margin-top:26px;font-size:19px;line-height:1.7;color:#d9d5cf;max-width:52ch}
-.acts{display:flex;gap:13px;flex-wrap:wrap;margin-top:38px}
-.primary{background:var(--accent);color:var(--on-accent);padding:16px 26px;font-size:14px;box-shadow:0 18px 50px color-mix(in srgb,var(--accent) 34%,transparent)}
-.primary:hover{box-shadow:0 26px 70px color-mix(in srgb,var(--accent) 50%,transparent)}
-.ghost{padding:16px 26px;font-size:14px;border:1px solid var(--line);backdrop-filter:blur(8px)}
-.chips{display:flex;gap:10px;flex-wrap:wrap;margin-top:44px}
-.chip{border:1px solid var(--line);background:rgba(255,255,255,.05);backdrop-filter:blur(10px);border-radius:999px;padding:10px 16px;font-size:12px;color:#e6e2db}
-.chip b{color:var(--accent)}
-.marq{border-block:1px solid var(--line);overflow:hidden;padding:16px 0;background:var(--bg2)}
-.marq div{display:flex;gap:26px;align-items:center;width:max-content;animation:slide 26s linear infinite;font-size:13px;letter-spacing:.12em;text-transform:uppercase;color:var(--muted)}
-.marq i{color:var(--accent);font-style:normal}
-@keyframes slide{to{transform:translateX(-50%)}}
-.sec{padding:130px 0}
-.sechead{max-width:760px;margin-bottom:56px}
-.sechead h2{font-size:clamp(34px,5.4vw,72px);line-height:.98;letter-spacing:-.05em;margin:14px 0 18px}
-.sechead p{color:var(--muted);line-height:1.75;font-size:17px}
-.cards{display:grid;grid-template-columns:repeat(3,1fr);gap:16px}
-.card{position:relative;border:1px solid var(--line);border-radius:20px;padding:30px;min-height:250px;display:flex;flex-direction:column;justify-content:space-between;background:linear-gradient(160deg,rgba(255,255,255,.06),rgba(255,255,255,.02));overflow:hidden;transition:transform .45s cubic-bezier(.2,.7,.3,1),border-color .45s}
-.card:before{content:"";position:absolute;inset:auto -30% -60% auto;width:240px;height:240px;border-radius:50%;background:var(--accent);filter:blur(70px);opacity:0;transition:opacity .5s}
-.card:hover{transform:translateY(-10px);border-color:color-mix(in srgb,var(--accent) 55%,transparent)}
-.card:hover:before{opacity:.22}
-.card .n{color:var(--accent);font-size:12px;letter-spacing:.14em}
-.card h3{font-size:24px;letter-spacing:-.035em;margin-top:auto;font-weight:650}
-.card p{color:var(--muted);font-size:14px;line-height:1.6;margin-top:10px}
-.strip{display:grid;grid-template-columns:repeat(4,1fr);gap:12px;margin-top:20px}
-.shot{overflow:hidden;border-radius:16px;height:290px;background:var(--bg2)}
-.shot img{width:100%;height:100%;object-fit:cover;transition:transform 1.2s cubic-bezier(.2,.7,.3,1),filter .6s;filter:grayscale(.25)}
-.shot:hover img{transform:scale(1.08);filter:none}
-.split{display:grid;grid-template-columns:1fr 1fr;gap:70px;align-items:center}.split>*{min-width:0}
-.split p{color:var(--muted);font-size:18px;line-height:1.85}
-.diffs{margin-top:30px;display:grid;gap:14px}
-.diffs li{display:flex;gap:14px;align-items:center;border-bottom:1px solid var(--line);padding-bottom:14px}
-.diffs i{color:var(--accent);font-style:normal}
-.panel{border:1px solid var(--line);border-radius:26px;padding:48px;background:linear-gradient(150deg,color-mix(in srgb,var(--accent) 16%,var(--bg2)),var(--bg2));position:relative;overflow:hidden}
-.panel:before{content:"";position:absolute;width:320px;height:320px;right:-90px;top:-90px;border-radius:50%;background:var(--accent2);filter:blur(90px);opacity:.25;animation:pulse 6s ease-in-out infinite}
-@keyframes pulse{50%{transform:scale(1.2);opacity:.35}}
-.panel .big{font-size:92px;line-height:.9;letter-spacing:-.07em;color:var(--accent)}
-.panel .lab{color:var(--muted);margin-top:14px;line-height:1.6}
-.final{position:relative;border-radius:28px;overflow:hidden;padding:110px 40px;text-align:center;border:1px solid var(--line)}
-.final img{position:absolute;inset:0;width:100%;height:100%;object-fit:cover;filter:brightness(.35) saturate(.8)}
-.final .in2{position:relative;z-index:2}
-.final h2{font-size:clamp(34px,5.6vw,68px);line-height:1;letter-spacing:-.05em;max-width:16ch;margin-inline:auto}
-.final p{color:#ded9d2;margin:22px auto 32px;max-width:54ch;line-height:1.75}
-.foot{display:flex;justify-content:space-between;gap:18px;flex-wrap:wrap;padding:36px 0 58px;color:var(--muted);font-size:12px;border-top:1px solid var(--line);margin-top:110px}
-@media(max-width:900px){.links{display:none}.stageinner{padding:130px 0 70px}.sec{padding:84px 0}.cards{grid-template-columns:1fr}.strip{grid-template-columns:1fr 1fr}.shot{height:200px}.split{grid-template-columns:1fr;gap:36px}.panel{padding:32px}.final{padding:70px 22px}}`;
+const FONTS: Record<SiteTypeface, { href: string; display: string; body: string }> = {
+  sans: {
+    href: "https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap",
+    display: '"Inter",ui-sans-serif,system-ui,sans-serif',
+    body: '"Inter",ui-sans-serif,system-ui,sans-serif',
+  },
+  serif: {
+    href: "https://fonts.googleapis.com/css2?family=Fraunces:opsz,wght@9..144,400;9..144,600&family=Inter:wght@400;500;600&display=swap",
+    display: '"Fraunces","Georgia",serif',
+    body: '"Inter",ui-sans-serif,system-ui,sans-serif',
+  },
+  mixed: {
+    href: "https://fonts.googleapis.com/css2?family=Instrument+Serif:ital@0;1&family=Inter:wght@400;500;600;700&display=swap",
+    display: '"Instrument Serif","Georgia",serif',
+    body: '"Inter",ui-sans-serif,system-ui,sans-serif',
+  },
+  condensed: {
+    href: "https://fonts.googleapis.com/css2?family=Oswald:wght@400;500;600&family=Inter:wght@400;500;600&display=swap",
+    display: '"Oswald",ui-sans-serif,system-ui,sans-serif',
+    body: '"Inter",ui-sans-serif,system-ui,sans-serif',
+  },
+};
 
-  const body = `
-<header class="nav" data-nav><a class="brand" href="#top">${logoMark(lead, id)}${esc(lead.name)}</a>
-<nav class="links"><a href="#servicos">Serviços</a><a href="#galeria">Galeria</a><a href="#sobre">Sobre</a><a href="#contato">Contato</a></nav>
-<a class="btn navbtn" href="${cta}">${esc(label)} ↗</a></header>
-<main id="top">
-<section class="stage"><div class="stagebg" data-px="0.16"><img src="${esc(id.images[0] ?? "")}" alt="${esc(lead.name)}" loading="eager"></div>
-<div class="wrap stageinner"><div class="eyebrow rv">${esc(lead.category)} · ${esc(lead.city)}</div>
-<h1 class="rv" data-d="1">${esc(c.headline)}</h1>
-<p class="sub rv" data-d="2">${esc(c.subheadline)}</p>
-<div class="acts rv" data-d="3"><a class="btn primary" href="${cta}">${esc(label)} ↗</a><a class="btn ghost" href="#servicos">Explorar</a></div>
-<div class="chips rv" data-d="4"><span class="chip"><b>${lead.rating.toFixed(1)}/5</b> · ${lead.reviews} avaliações no Google</span><span class="chip">${esc(lead.address || lead.city)}</span>${lead.instagram ? `<span class="chip">${esc(lead.instagram)}</span>` : ""}</div>
-</div></section>
+/** Per-layout rhythm: how much air the page breathes and how wide it runs. */
+const RHYTHM: Record<SiteLayout, { pad: number; wrap: number; h1: string; h2: string }> = {
+  editorial: { pad: 112, wrap: 1180, h1: "clamp(40px,6.4vw,90px)", h2: "clamp(28px,3.8vw,46px)" },
+  immersive: { pad: 96, wrap: 1240, h1: "clamp(38px,7vw,104px)", h2: "clamp(26px,3.6vw,44px)" },
+  showcase: { pad: 88, wrap: 1220, h1: "clamp(36px,5.4vw,72px)", h2: "clamp(25px,3.2vw,40px)" },
+  minimal: { pad: 104, wrap: 1040, h1: "clamp(34px,5vw,64px)", h2: "clamp(24px,3vw,36px)" },
+};
 
-<div class="marq"><div>${marquee}${marquee}</div></div>
+const RADIUS = { sharp: "2px", soft: "14px", round: "28px" } as const;
 
-<section class="sec wrap" id="servicos">
-<div class="sechead"><div class="eyebrow">O que fazemos</div><h2 class="rv">Feito para impressionar.</h2><p class="rv">${esc(c.about)}</p></div>
-<div class="cards">${c.services
-    .filter(Boolean)
-    .slice(0, 6)
-    .map(
-      (s, i) =>
-        `<article class="card rv" data-d="${(i % 3) + 1}"><span class="n">${String(i + 1).padStart(2, "0")}</span><h3>${esc(s)}</h3><p>${serviceNote(c, i)}</p></article>`,
-    )
-    .join("")}</div></section>
-
-<section class="sec wrap" id="galeria" style="padding-top:0">
-<div class="sechead"><div class="eyebrow">Galeria</div><h2 class="rv">Por dentro de ${esc(lead.name)}.</h2></div>
-<div class="strip">${gallery(id, lead, 1, 4)}</div></section>
-
-<section class="sec wrap" id="sobre"><div class="split">
-<div><div class="eyebrow">Por que escolher</div><h2 class="rv" style="font-size:clamp(30px,4.4vw,56px);letter-spacing:-.05em;line-height:1.02;margin:14px 0 22px">Cada detalhe importa.</h2>
-<p class="rv">${esc(c.about)}</p>
-<ul class="diffs">${c.differentials
-    .filter(Boolean)
-    .slice(0, 4)
-    .map((d, i) => `<li class="rv" data-d="${i + 1}"><i>✦</i><span>${esc(d)}</span></li>`)
-    .join("")}</ul></div>
-<div class="panel rv"><div class="big">${lead.rating.toFixed(1)}</div><div class="lab">de avaliação média no Google<br>com ${lead.reviews} avaliações públicas</div></div>
-</div></section>
-
-</main>
-${whatsappFab(lead, label)}
-${mapFooter(lead, id)}`;
-
-  return { css, body };
-}
-
-/* -------------------------------------------------------------------------- */
-/*  Layout 3 — Showcase                                                        */
-/*  The most complete page: sticky nav, gallery grid, services, stats,         */
-/*  location and a contact block.                                              */
-/* -------------------------------------------------------------------------- */
-
-function showcase(lead: Lead, c: SiteSection, id: Identity): Parts {
-  const cta = phoneHref(lead.phone);
-  const label = ctaLabel(c.cta);
-  const css = `
-body{font-family:"Inter",ui-sans-serif,system-ui,sans-serif;background:var(--bg)}
-.nav{position:sticky;top:0;z-index:30;display:flex;align-items:center;justify-content:space-between;gap:20px;padding:16px max(22px,calc((100vw - 1200px)/2));background:color-mix(in srgb,var(--bg) 85%,transparent);backdrop-filter:blur(14px);transition:box-shadow .3s}
-.nav.stuck{box-shadow:0 6px 30px rgba(0,0,0,.10)}
-.brand{display:flex;align-items:center;gap:12px;font-weight:750;letter-spacing:-.025em}
-.mono{width:42px;height:42px;border-radius:14px;display:grid;place-items:center;background:linear-gradient(140deg,var(--accent),var(--accent2));color:var(--on-accent);font-weight:800;font-size:14px}
-.logoimg{width:42px;height:42px;border-radius:14px;object-fit:cover}
-.links{display:flex;gap:24px;font-size:14px;color:var(--muted)}.links a:hover{color:var(--accent)}
-.navbtn{background:var(--accent);color:var(--on-accent);padding:12px 20px;font-size:13px;box-shadow:0 10px 30px color-mix(in srgb,var(--accent) 30%,transparent)}
-.hero{display:grid;grid-template-columns:1.02fr .98fr;gap:56px;align-items:center;padding:64px 0 70px}
-.hero>*{min-width:0}
-.hero h1{font-size:clamp(42px,5.6vw,76px);line-height:1;letter-spacing:-.045em;margin:18px 0 0}
-.hero h1 em{font-style:normal;background:linear-gradient(120deg,var(--accent),var(--accent2));-webkit-background-clip:text;background-clip:text;color:transparent}
-.sub{margin-top:22px;font-size:18px;line-height:1.7;color:var(--muted);max-width:48ch}
-.acts{display:flex;gap:12px;flex-wrap:wrap;margin-top:30px}
-.primary{background:var(--accent);color:var(--on-accent);padding:15px 24px;font-size:14px;box-shadow:0 16px 40px color-mix(in srgb,var(--accent) 28%,transparent)}
-.ghost{padding:15px 24px;font-size:14px;border:1px solid var(--line)}
-.trust{display:flex;gap:22px;margin-top:34px;flex-wrap:wrap;color:var(--muted);font-size:13px;align-items:center}
-.stars{color:var(--accent);letter-spacing:2px}
-.collage{display:grid;grid-template-columns:1fr 1fr;grid-template-rows:repeat(3,170px);gap:12px;min-width:0}
-.collage .shot{border-radius:24px}
-.collage .shot:nth-child(1){grid-column:1;grid-row:1 / span 2}
-.collage .shot:nth-child(2){grid-column:2;grid-row:1 / span 2}
-.collage .shot:nth-child(3){grid-column:1 / span 2;grid-row:3}
-.shot{overflow:hidden;border-radius:20px;background:var(--bg2);box-shadow:var(--shadow)}
-.shot img{width:100%;height:100%;object-fit:cover;transition:transform 1s cubic-bezier(.2,.7,.3,1)}
-.shot:hover img{transform:scale(1.07)}
-.band{background:var(--bg2);border-block:1px solid var(--line)}
-.stats{display:grid;grid-template-columns:repeat(4,1fr);gap:20px;padding:46px 0;text-align:center}
-.stats b{display:block;font-size:38px;letter-spacing:-.04em;color:var(--accent);line-height:1}
-.stats span{color:var(--muted);font-size:13px;display:block;margin-top:8px}
-.sec{padding:100px 0}
-.sechead{text-align:center;max-width:680px;margin:0 auto 52px}
-.sechead h2{font-size:clamp(30px,4.4vw,52px);line-height:1.05;letter-spacing:-.04em;margin:12px 0 16px}
-.sechead p{color:var(--muted);line-height:1.75}
-.grid{display:grid;grid-template-columns:repeat(3,1fr);gap:16px}
-.card{border:1px solid var(--line);border-radius:22px;padding:28px;background:var(--card);box-shadow:var(--shadow);transition:transform .4s cubic-bezier(.2,.7,.3,1),box-shadow .4s}
-.card:hover{transform:translateY(-8px)}
-.ico{width:46px;height:46px;border-radius:14px;display:grid;place-items:center;background:color-mix(in srgb,var(--accent) 16%,transparent);color:var(--accent);font-weight:800;font-size:14px;margin-bottom:20px}
-.card h3{font-size:20px;letter-spacing:-.025em}
-.card p{color:var(--muted);line-height:1.65;font-size:14.5px;margin-top:10px}
-.gal{display:grid;grid-template-columns:repeat(3,1fr);grid-auto-rows:230px;gap:14px}
-.gal .shot:nth-child(3n+1){grid-row:span 1}
-.about{display:grid;grid-template-columns:1fr 1fr;gap:60px;align-items:center}.about>*{min-width:0}
-.about p{color:var(--muted);font-size:17px;line-height:1.85}
-.diffs{margin-top:28px;display:grid;gap:12px}
-.diffs li{display:flex;gap:12px;align-items:flex-start;background:var(--bg2);border:1px solid var(--line);border-radius:14px;padding:16px 18px}
-.diffs i{color:var(--accent);font-style:normal}
-.aboutimg{border-radius:26px;overflow:hidden;height:480px;box-shadow:var(--shadow)}
-.aboutimg img{width:100%;height:100%;object-fit:cover}
-.contact{display:grid;grid-template-columns:1.05fr .95fr;gap:0;border:1px solid var(--line);border-radius:26px;overflow:hidden;box-shadow:var(--shadow)}
-.cbox{padding:56px 46px;background:linear-gradient(150deg,color-mix(in srgb,var(--accent) 14%,var(--card)),var(--card))}
-.cbox h2{font-size:clamp(28px,3.6vw,44px);letter-spacing:-.04em;line-height:1.05;margin:12px 0 16px}
-.cbox p{color:var(--muted);line-height:1.75}
-.info{margin:26px 0 30px;display:grid;gap:14px;font-size:15px}
-.info div{display:flex;gap:12px;align-items:center}.info i{font-style:normal;color:var(--accent)}
-.cimg{min-height:100%}.cimg img{width:100%;height:100%;object-fit:cover;min-height:380px}
-.foot{display:flex;justify-content:space-between;gap:18px;flex-wrap:wrap;padding:34px 0 56px;border-top:1px solid var(--line);margin-top:90px;color:var(--muted);font-size:13px}
-@media(max-width:900px){.links{display:none}.hero{grid-template-columns:1fr;gap:36px;padding-top:34px}.collage{grid-template-rows:150px 150px 150px}.stats{grid-template-columns:1fr 1fr;gap:28px;padding:34px 0}.sec{padding:70px 0}.grid,.gal{grid-template-columns:1fr}.gal{grid-auto-rows:210px}.about{grid-template-columns:1fr;gap:32px}.aboutimg{height:320px}.contact{grid-template-columns:1fr}.cbox{padding:36px 24px}}`;
-
-  const stars = "★★★★★".slice(0, Math.max(1, Math.round(lead.rating)));
-
-  const body = `
-<header class="nav" data-nav><a class="brand" href="#top">${logoMark(lead, id)}${esc(lead.name)}</a>
-<nav class="links"><a href="#servicos">Serviços</a><a href="#galeria">Galeria</a><a href="#sobre">Sobre</a><a href="#contato">Contato</a></nav>
-<a class="btn navbtn" href="${cta}">${esc(label)}</a></header>
-<main id="top">
-<section class="wrap hero">
-<div><div class="eyebrow">${esc(lead.category)} · ${esc(lead.city)}</div>
-<h1 class="rv">${esc(c.headline)}</h1>
-<p class="sub rv" data-d="1">${esc(c.subheadline)}</p>
-<div class="acts rv" data-d="2"><a class="btn primary" href="${cta}">${esc(label)}</a><a class="btn ghost" href="#galeria">Ver a galeria</a></div>
-<div class="trust rv" data-d="3"><span class="stars">${stars}</span><span><b>${lead.rating.toFixed(1)}</b> · ${lead.reviews} avaliações no Google</span><span>${esc(lead.address || lead.city)}</span></div></div>
-<div class="collage rv">${gallery(id, lead, 0, 3)}</div>
-</section>
-
-<div class="band"><div class="wrap stats">
-<div class="rv"><b>${lead.rating.toFixed(1)}</b><span>nota no Google</span></div>
-<div class="rv" data-d="1"><b>${lead.reviews}</b><span>avaliações reais</span></div>
-<div class="rv" data-d="2"><b>${c.services.filter(Boolean).length || 4}</b><span>serviços oferecidos</span></div>
-<div class="rv" data-d="3"><b>${esc(lead.city.split(",")[0] ?? lead.city)}</b><span>atendimento local</span></div>
-</div></div>
-
-<section class="sec wrap" id="servicos">
-<div class="sechead"><div class="eyebrow">Serviços</div><h2 class="rv">Tudo o que oferecemos</h2><p class="rv">${esc(c.about)}</p></div>
-<div class="grid">${c.services
-    .filter(Boolean)
-    .slice(0, 6)
-    .map(
-      (s, i) =>
-        `<article class="card rv" data-d="${(i % 3) + 1}"><div class="ico">${String(i + 1).padStart(2, "0")}</div><h3>${esc(s)}</h3><p>${serviceNote(c, i)}</p></article>`,
-    )
-    .join("")}</div></section>
-
-<section class="sec wrap" id="galeria" style="padding-top:0">
-<div class="sechead"><div class="eyebrow">Galeria</div><h2 class="rv">Fotos do nosso espaço</h2></div>
-<div class="gal">${gallery(id, lead, 3, 6)}</div></section>
-
-<section class="sec wrap" id="sobre"><div class="about">
-<div><div class="eyebrow">Sobre nós</div><h2 class="rv" style="font-size:clamp(28px,4vw,48px);letter-spacing:-.04em;line-height:1.05;margin:12px 0 20px">${esc(lead.name)}</h2>
-<p class="rv">${esc(c.about)}</p>
-<ul class="diffs">${c.differentials
-    .filter(Boolean)
-    .slice(0, 4)
-    .map((d, i) => `<li class="rv" data-d="${i + 1}"><i>✓</i><span>${esc(d)}</span></li>`)
-    .join("")}</ul></div>
-<div class="aboutimg rv"><img src="${esc(id.images[2] ?? id.images[0] ?? "")}" alt="${esc(lead.name)}" loading="lazy"></div>
-</div></section>
-
-</main>
-${whatsappFab(lead, label)}
-${mapFooter(lead, id)}`;
-
-  return { css, body };
-}
-
-/* -------------------------------------------------------------------------- */
-/*  Layout 4 — Minimal                                                         */
-/*  Extreme whitespace, one strong image, quiet motion.                        */
-/* -------------------------------------------------------------------------- */
-
-function minimal(lead: Lead, c: SiteSection, id: Identity): Parts {
-  const cta = phoneHref(lead.phone);
-  const label = ctaLabel(c.cta);
-  const css = `
-body{font-family:"Inter",ui-sans-serif,system-ui,sans-serif;letter-spacing:-.01em}
-.wrap{width:min(940px,calc(100% - 44px))}
-.nav{display:flex;align-items:center;justify-content:space-between;padding:34px 0;font-size:13px}
-.brand{display:flex;align-items:center;gap:11px;font-weight:600}
-.mono{width:32px;height:32px;border-radius:50%;display:grid;place-items:center;background:var(--accent);color:var(--on-accent);font-size:12px;font-weight:700}
-.logoimg{width:32px;height:32px;border-radius:50%;object-fit:cover}
-.links{display:flex;gap:22px;color:var(--muted)}.links a:hover{color:var(--ink)}
-.hero{padding:96px 0 72px;max-width:780px}
-.hero h1{font-size:clamp(38px,5.6vw,68px);line-height:1.04;letter-spacing:-.045em;font-weight:600;margin:22px 0 0}
-.hero h1 em{font-style:normal;color:var(--accent)}
-.sub{margin-top:24px;font-size:19px;line-height:1.75;color:var(--muted);max-width:52ch}
-.acts{display:flex;gap:14px;flex-wrap:wrap;margin-top:36px;align-items:center}
-.primary{background:var(--ink);color:var(--bg);padding:14px 24px;font-size:14px}
-.link{font-size:14px;color:var(--muted);border-bottom:1px solid var(--line);border-radius:0;padding-bottom:3px}
-.link:hover{color:var(--accent);border-color:var(--accent)}
-.cover{margin:20px 0 0;border-radius:2px;overflow:hidden;height:min(60vh,520px)}
-.cover img{width:100%;height:100%;object-fit:cover;transition:transform 1.4s cubic-bezier(.2,.7,.3,1)}
-.cover:hover img{transform:scale(1.03)}
-.meta{display:flex;gap:28px;flex-wrap:wrap;padding:20px 0 0;color:var(--muted);font-size:13px}
-.meta b{color:var(--ink);font-weight:600}
-.sec{padding:104px 0}
-.lab{font-size:12px;letter-spacing:.18em;text-transform:uppercase;color:var(--muted);margin-bottom:34px}
-.sec h2{font-size:clamp(26px,3.4vw,38px);line-height:1.2;letter-spacing:-.035em;font-weight:600;max-width:22ch}
-.body{margin-top:22px;font-size:17px;line-height:1.9;color:var(--muted);max-width:62ch}
-.svc{display:grid;grid-template-columns:1fr 1fr;gap:2px 60px;margin-top:8px}
-.svc li{padding:22px 0;border-bottom:1px solid var(--line)}
-.svc h3{font-size:18px;font-weight:600;letter-spacing:-.02em}
-.svc p{color:var(--muted);font-size:14.5px;line-height:1.65;margin-top:6px}
-.pair{display:grid;grid-template-columns:1fr 1fr;gap:14px;margin-top:44px}
-.shot{overflow:hidden;border-radius:2px;height:300px;background:var(--bg2)}
+/** The shared stylesheet every block draws from. Blocks add nothing global. */
+function systemCss(id: Identity): string {
+  const f = FONTS[id.typeface];
+  const r = RHYTHM[id.layout];
+  const rad = RADIUS[id.shape];
+  const upper = id.typeface === "condensed" ? "text-transform:uppercase;letter-spacing:.01em" : "";
+  const tight = id.typeface === "sans" ? "-.04em" : id.typeface === "condensed" ? "0" : "-.02em";
+  return `
+:root{--rad:${rad};--pad:${r.pad}px}
+body{font-family:${f.body};font-size:16.5px;line-height:1.6}
+.wrap{width:min(${r.wrap}px,calc(100% - 44px))}
+h1,h2,h3,.dsp{font-family:${f.display};font-weight:${id.typeface === "serif" || id.typeface === "mixed" ? 400 : 600};letter-spacing:${tight};line-height:1.06;${upper}}
+h1{font-size:${r.h1}}
+h2{font-size:${r.h2};line-height:1.12}
+.sec{padding:var(--pad) 0}
+.sec+.sec{padding-top:calc(var(--pad) * .72)}
+.lab{font-size:11px;letter-spacing:.22em;text-transform:uppercase;font-weight:700;color:var(--accent);margin-bottom:18px}
+.lede{color:var(--muted);font-size:17.5px;line-height:1.85;max-width:64ch}
+.btn.primary{background:var(--accent);color:var(--on-accent);padding:15px 30px;font-size:15px}
+.btn.ghost{border:1px solid var(--line);padding:14px 28px;font-size:15px;color:var(--ink)}
+.btn.primary:hover{box-shadow:0 16px 40px color-mix(in srgb,var(--accent) 42%,transparent)}
+.shot{overflow:hidden;border-radius:var(--rad);background:var(--bg2)}
 .shot img{width:100%;height:100%;object-fit:cover;transition:transform 1.2s cubic-bezier(.2,.7,.3,1)}
 .shot:hover img{transform:scale(1.05)}
-.diffs{display:grid;gap:0;margin-top:26px;max-width:640px}
-.diffs li{display:flex;gap:18px;padding:18px 0;border-bottom:1px solid var(--line);align-items:baseline}
-.diffs i{font-style:normal;color:var(--accent);font-size:12px}
-.end{padding:120px 0;border-top:1px solid var(--line)}
-.end h2{font-size:clamp(30px,4.4vw,52px);letter-spacing:-.045em;line-height:1.06;max-width:18ch}
-.end p{color:var(--muted);margin-top:20px;line-height:1.8;max-width:48ch}
-.foot{display:flex;justify-content:space-between;gap:18px;flex-wrap:wrap;padding:0 0 60px;color:var(--muted);font-size:12px}
-@media(max-width:800px){.links{display:none}.hero{padding:54px 0 44px}.sec{padding:66px 0}.svc,.pair{grid-template-columns:1fr}.shot{height:230px}.end{padding:74px 0}}`;
+.nav{display:flex;align-items:center;justify-content:space-between;gap:20px;padding:22px 0;position:sticky;top:0;z-index:50;background:color-mix(in srgb,var(--bg) 86%,transparent);backdrop-filter:blur(14px);transition:box-shadow .3s,padding .3s}
+.nav.stuck{box-shadow:0 1px 0 var(--line);padding:14px 0}
+.brand{display:flex;align-items:center;gap:12px;font-weight:650;letter-spacing:-.02em;font-size:16px}
+.mono{display:grid;place-items:center;width:38px;height:38px;border-radius:var(--rad);background:var(--accent);color:var(--on-accent);font-size:13px;font-weight:700;letter-spacing:.02em}
+.logoimg{width:38px;height:38px;object-fit:cover;border-radius:var(--rad)}
+.links{display:flex;gap:26px;font-size:14px;color:var(--muted)}
+.links a:hover{color:var(--ink)}
+.card{background:var(--card);border:1px solid var(--line);border-radius:var(--rad);padding:26px;box-shadow:var(--shadow)}
+@media(max-width:860px){:root{--pad:${Math.round(r.pad * 0.62)}px}.links{display:none}}`;
+}
+/* -------------------------------------------------------------------------- */
+/*  Block library                                                              */
+/*  Each block renders one section in one of several treatments. The page is   */
+/*  whatever list of blocks the AI composed, so the architecture itself varies */
+/*  from business to business — not only the words inside a fixed template.    */
+/* -------------------------------------------------------------------------- */
 
-  const body = `
-<header class="wrap nav"><a class="brand" href="#top">${logoMark(lead, id)}${esc(lead.name)}</a>
-<nav class="links"><a href="#servicos">Serviços</a><a href="#sobre">Sobre</a><a href="#contato">Contato</a></nav>
-<a class="link" href="${cta}">${esc(label)} →</a></header>
-<main id="top">
-<section class="wrap hero"><div class="eyebrow">${esc(lead.category)} · ${esc(lead.city)}</div>
-<h1 class="rv">${esc(c.headline)}</h1><p class="sub rv" data-d="1">${esc(c.subheadline)}</p>
-<div class="acts rv" data-d="2"><a class="btn primary" href="${cta}">${esc(label)}</a><a class="link" href="#servicos">Conheça o trabalho</a></div></section>
-<div class="wrap"><div class="cover rv"><img src="${esc(id.images[0] ?? "")}" alt="${esc(lead.name)}" loading="eager"></div>
-<div class="meta"><span><b>${lead.rating.toFixed(1)}</b> no Google</span><span><b>${lead.reviews}</b> avaliações</span><span>${esc(lead.address || lead.city)}</span></div></div>
+type Ctx = {
+  lead: Lead;
+  c: SiteSection;
+  id: Identity;
+  cta: string;
+  label: string;
+  /** Hands out photos in order, so no two blocks show the same one twice. */
+  next: (n?: number) => string[];
+};
 
-<section class="sec wrap" id="servicos"><div class="lab">Serviços</div>
-<h2 class="rv">O que fazemos</h2>
-<ul class="svc">${c.services
-    .filter(Boolean)
-    .slice(0, 6)
-    .map(
-      (s, i) =>
-        `<li class="rv" data-d="${(i % 3) + 1}"><h3>${esc(s)}</h3><p>${serviceNote(c, i)}</p></li>`,
-    )
-    .join("")}</ul>
-<div class="pair">${gallery(id, lead, 1, 2)}</div></section>
+type Parts = { css: string; body: string };
 
-<section class="sec wrap" id="sobre"><div class="lab">Sobre</div>
-<h2 class="rv">${esc(lead.name)}</h2><p class="body rv">${esc(c.about)}</p>
-<ul class="diffs">${c.differentials
-    .filter(Boolean)
-    .slice(0, 4)
-    .map((d, i) => `<li class="rv" data-d="${i + 1}"><i>0${i + 1}</i><span>${esc(d)}</span></li>`)
-    .join("")}</ul></section>
-
-</main>
-${whatsappFab(lead, label)}
-${mapFooter(lead, id)}`;
-
-  return { css, body };
+function head(block: SiteBlock, fallbackTitle: string, fallbackLab: string): string {
+  const lab = block.eyebrow ?? fallbackLab;
+  const title = block.title ?? fallbackTitle;
+  return (
+    (lab ? '<div class="lab rv">' + esc(lab) + "</div>" : "") +
+    (title ? '<h2 class="rv">' + esc(title) + "</h2>" : "")
+  );
 }
 
+function shots(x: Ctx, n: number, cls = "shot"): string {
+  return x
+    .next(n)
+    .map(
+      (src, i) =>
+        '<figure class="' +
+        cls +
+        ' rv" data-d="' +
+        ((i % 4) + 1) +
+        '"><img src="' +
+        esc(src) +
+        '" alt="' +
+        esc(x.lead.name) +
+        " — foto " +
+        (i + 1) +
+        '" loading="lazy"></figure>',
+    )
+    .join("");
+}
+
+/* ---------------------------------- hero ---------------------------------- */
+
+function hero(x: Ctx, b: SiteBlock): Parts {
+  const { lead, c, id } = x;
+  const eyebrow = '<div class="eyebrow">' + esc(lead.category) + " · " + esc(lead.city) + "</div>";
+  const acts =
+    '<div class="hacts rv" data-d="2"><a class="btn primary" href="' +
+    x.cta +
+    '">' +
+    esc(x.label) +
+    '</a><a class="btn ghost" href="#contato">Onde estamos</a></div>';
+  const copy =
+    eyebrow +
+    '<h1 class="rv">' +
+    esc(c.headline) +
+    '</h1><p class="lede rv" data-d="1">' +
+    esc(c.subheadline) +
+    "</p>" +
+    acts;
+
+  const css = `
+.hero{padding:76px 0 var(--pad)}
+.hero .eyebrow{margin-bottom:20px}
+.hero .lede{margin-top:22px}
+.hacts{display:flex;gap:14px;flex-wrap:wrap;margin-top:34px}
+.hsplit{display:grid;grid-template-columns:1.05fr .95fr;gap:56px;align-items:center}
+.hsplit .shot{height:min(70vh,600px)}
+.hstack .shot{height:min(66vh,560px);margin-top:52px}
+.hframe{text-align:center}
+.hframe .lede,.hframe .hacts{margin-inline:auto;justify-content:center}
+.hstrip{display:grid;grid-template-columns:repeat(3,1fr);gap:12px;margin-top:52px}
+.hstrip .shot{height:250px}
+.hfull{position:relative;min-height:min(94vh,860px);display:flex;align-items:flex-end;overflow:hidden}
+.hfull .bg{position:absolute;inset:-12% 0;z-index:0}
+.hfull .bg img{width:100%;height:100%;object-fit:cover}
+.hfull .veil{position:absolute;inset:0;z-index:1;background:linear-gradient(180deg,color-mix(in srgb,var(--bg) 55%,transparent) 0%,transparent 32%,color-mix(in srgb,var(--bg) 88%,transparent) 100%)}
+.hfull .in{position:relative;z-index:2;padding:0 0 var(--pad)}
+@media(max-width:860px){.hsplit{grid-template-columns:1fr;gap:34px}.hsplit .shot{height:320px}.hstrip{grid-template-columns:1fr}.hstack .shot{height:300px}}`;
+
+  if (b.variant === "full") {
+    const [bg] = x.next(1);
+    return {
+      css,
+      body: `<section class="hero hfull"><div class="bg" data-px="0.14"><img src="${esc(bg ?? "")}" alt="${esc(lead.name)}" loading="eager"></div><div class="veil"></div><div class="wrap in">${copy}</div></section>`,
+    };
+  }
+  if (b.variant === "stacked") {
+    return {
+      css,
+      body: `<section class="wrap hero hstack">${copy}<figure class="shot rv" data-d="3"><img src="${esc(x.next(1)[0] ?? "")}" alt="${esc(lead.name)}" loading="eager"></figure></section>`,
+    };
+  }
+  if (b.variant === "frame") {
+    return {
+      css,
+      body: `<section class="wrap hero hframe">${copy}<div class="hstrip">${shots(x, 3)}</div></section>`,
+    };
+  }
+  return {
+    css,
+    body: `<section class="wrap hero hsplit"><div>${copy}</div><figure class="shot rv" data-d="2"><img src="${esc(x.next(1)[0] ?? "")}" alt="${esc(lead.name)}" loading="eager"></figure></section>`,
+  };
+}
+
+/* --------------------------------- stats ---------------------------------- */
+
+function stats(x: Ctx, b: SiteBlock): Parts {
+  const { lead } = x;
+  const rows = [
+    { k: lead.rating.toFixed(1), v: "nota no Google" },
+    { k: String(lead.reviews), v: "avaliações reais" },
+    { k: lead.city, v: "onde atendemos" },
+    { k: lead.category, v: "especialidade" },
+  ];
+  const css = `
+.stats{display:grid;grid-template-columns:repeat(4,1fr);gap:2px;border-top:1px solid var(--line);border-bottom:1px solid var(--line)}
+.stats>div{padding:34px 24px}
+.stats b{display:block;font-size:clamp(24px,3vw,36px);letter-spacing:-.03em;font-weight:600;color:var(--accent)}
+.stats span{display:block;margin-top:8px;font-size:13px;color:var(--muted)}
+.statc{display:grid;grid-template-columns:repeat(4,1fr);gap:14px;border:0}
+.statc>div{border-radius:var(--rad);background:var(--bg2);padding:28px 24px}
+@media(max-width:860px){.stats,.statc{grid-template-columns:1fr 1fr}}`;
+  const cls = b.variant === "cards" ? "stats statc" : "stats";
+  return {
+    css,
+    body: `<section class="wrap sec"><div class="${cls}">${rows
+      .map(
+        (r, i) =>
+          `<div class="rv" data-d="${i + 1}"><b>${esc(r.k)}</b><span>${esc(r.v)}</span></div>`,
+      )
+      .join("")}</div></section>`,
+  };
+}
+
+/* -------------------------------- services -------------------------------- */
+
+function services(x: Ctx, b: SiteBlock): Parts {
+  const { c } = x;
+  const list = c.services.filter(Boolean).slice(0, 6);
+  const note = (i: number) => esc(c.serviceNotes?.[i] ?? "");
+  const css = `
+.svcards{display:grid;grid-template-columns:repeat(3,1fr);gap:16px;margin-top:44px}
+.svcards h3{font-size:19px;margin-bottom:10px}
+.svcards p{color:var(--muted);font-size:14.5px;line-height:1.7}
+.svcards .n{font-size:12px;color:var(--accent);letter-spacing:.16em;display:block;margin-bottom:16px}
+.svlist{margin-top:40px;border-top:1px solid var(--line)}
+.svlist li{display:grid;grid-template-columns:64px 1fr 1.1fr;gap:24px;padding:26px 0;border-bottom:1px solid var(--line);align-items:baseline}
+.svlist i{font-style:normal;color:var(--accent);font-size:13px;letter-spacing:.1em}
+.svlist h3{font-size:20px}
+.svlist p{color:var(--muted);font-size:15px;line-height:1.7}
+.svgrid{display:grid;grid-template-columns:1fr 1fr;gap:2px 56px;margin-top:36px}
+.svgrid li{padding:24px 0;border-bottom:1px solid var(--line)}
+.svgrid h3{font-size:18px}
+.svgrid p{color:var(--muted);font-size:14.5px;line-height:1.65;margin-top:7px}
+.svalt{margin-top:48px;display:grid;gap:18px}
+.svalt .row{display:grid;grid-template-columns:1fr 1fr;gap:40px;align-items:center}
+.svalt .row:nth-child(even) figure{order:-1}
+.svalt .shot{height:300px}
+.svalt h3{font-size:22px;margin-bottom:12px}
+.svalt p{color:var(--muted);line-height:1.8}
+@media(max-width:860px){.svcards,.svgrid,.svalt .row{grid-template-columns:1fr}.svlist li{grid-template-columns:1fr;gap:8px}.svalt .row:nth-child(even) figure{order:0}}`;
+
+  const h = head(b, "O que fazemos", "Serviços");
+  if (b.variant === "list") {
+    return {
+      css,
+      body: `<section class="wrap sec" id="servicos">${h}<ul class="svlist">${list
+        .map(
+          (s, i) =>
+            `<li class="rv" data-d="${(i % 3) + 1}"><i>0${i + 1}</i><h3>${esc(s)}</h3><p>${note(i)}</p></li>`,
+        )
+        .join("")}</ul></section>`,
+    };
+  }
+  if (b.variant === "grid") {
+    return {
+      css,
+      body: `<section class="wrap sec" id="servicos">${h}<ul class="svgrid">${list
+        .map(
+          (s, i) =>
+            `<li class="rv" data-d="${(i % 3) + 1}"><h3>${esc(s)}</h3><p>${note(i)}</p></li>`,
+        )
+        .join("")}</ul></section>`,
+    };
+  }
+  if (b.variant === "alternating") {
+    const pics = x.next(Math.min(3, list.length));
+    return {
+      css,
+      body: `<section class="wrap sec" id="servicos">${h}<div class="svalt">${list
+        .slice(0, pics.length)
+        .map(
+          (s, i) =>
+            `<div class="row"><figure class="shot rv"><img src="${esc(pics[i] ?? "")}" alt="${esc(s)}" loading="lazy"></figure><div class="rv" data-d="1"><h3>${esc(s)}</h3><p>${note(i)}</p></div></div>`,
+        )
+        .join("")}</div></section>`,
+    };
+  }
+  return {
+    css,
+    body: `<section class="wrap sec" id="servicos">${h}<div class="svcards">${list
+      .map(
+        (s, i) =>
+          `<article class="card rv" data-d="${(i % 3) + 1}"><span class="n">0${i + 1}</span><h3>${esc(s)}</h3><p>${note(i)}</p></article>`,
+      )
+      .join("")}</div></section>`,
+  };
+}
+
+/* -------------------------------- gallery --------------------------------- */
+
+function gallery(x: Ctx, b: SiteBlock): Parts {
+  const css = `
+.gmosaic{display:grid;grid-template-columns:repeat(4,1fr);grid-auto-rows:190px;gap:12px;margin-top:38px}
+.gmosaic figure:nth-child(1){grid-column:span 2;grid-row:span 2}
+.gmosaic figure:nth-child(4){grid-column:span 2}
+.gmosaic figure{height:100%}
+.gstrip{display:flex;gap:12px;overflow-x:auto;margin-top:38px;padding-bottom:12px;scroll-snap-type:x mandatory}
+.gstrip figure{flex:0 0 min(74vw,430px);height:320px;scroll-snap-align:start}
+.ggrid{display:grid;grid-template-columns:repeat(3,1fr);gap:12px;margin-top:38px}
+.ggrid figure{height:280px}
+.gduo{display:grid;grid-template-columns:1fr 1fr;gap:14px;margin-top:38px}
+.gduo figure{height:340px}
+@media(max-width:860px){.gmosaic,.ggrid,.gduo{grid-template-columns:1fr 1fr;grid-auto-rows:150px}.gmosaic figure:nth-child(1),.gmosaic figure:nth-child(4){grid-column:span 2}.ggrid figure,.gduo figure{height:200px}}`;
+  const h = head(b, b.title ?? "", "Galeria");
+  const map = { strip: ["gstrip", 5], grid: ["ggrid", 6], duo: ["gduo", 2] } as const;
+  const [cls, n] = (map as Record<string, readonly [string, number]>)[b.variant ?? ""] ?? [
+    "gmosaic",
+    4,
+  ];
+  return {
+    css,
+    body: `<section class="wrap sec">${h}<div class="${cls}">${shots(x, n)}</div></section>`,
+  };
+}
+
+/* --------------------------------- about ---------------------------------- */
+
+function about(x: Ctx, b: SiteBlock): Parts {
+  const { lead, c } = x;
+  const css = `
+.asplit{display:grid;grid-template-columns:1fr 1fr;gap:56px;align-items:center;margin-top:34px}
+.asplit .shot{height:min(60vh,480px)}
+.awide{max-width:70ch;margin-top:30px}
+.awide p{font-size:19px;line-height:1.9;color:var(--muted)}
+.aover{position:relative;margin-top:34px}
+.aover .shot{height:min(58vh,460px)}
+.aover .panel{background:var(--card);border:1px solid var(--line);border-radius:var(--rad);padding:34px;box-shadow:var(--shadow);max-width:560px;margin:-72px 0 0 auto;position:relative;z-index:2}
+@media(max-width:860px){.asplit{grid-template-columns:1fr;gap:28px}.asplit .shot,.aover .shot{height:260px}.aover .panel{margin-top:-32px;padding:24px}}`;
+  const h = head(b, lead.name, "Sobre");
+  const text = '<p class="lede rv">' + esc(c.about) + "</p>";
+  if (b.variant === "wide") {
+    return {
+      css,
+      body: `<section class="wrap sec" id="sobre">${h}<div class="awide">${text}</div></section>`,
+    };
+  }
+  if (b.variant === "overlap") {
+    return {
+      css,
+      body: `<section class="wrap sec" id="sobre">${h}<div class="aover"><figure class="shot rv"><img src="${esc(x.next(1)[0] ?? "")}" alt="${esc(lead.name)}" loading="lazy"></figure><div class="panel rv" data-d="1">${text}</div></div></section>`,
+    };
+  }
+  return {
+    css,
+    body: `<section class="wrap sec" id="sobre"><div class="asplit"><div>${h}${text}</div><figure class="shot rv" data-d="1"><img src="${esc(x.next(1)[0] ?? "")}" alt="${esc(lead.name)}" loading="lazy"></figure></div></section>`,
+  };
+}
+
+/* ----------------------------- differentials ------------------------------ */
+
+function differentials(x: Ctx, b: SiteBlock): Parts {
+  const list = x.c.differentials.filter(Boolean).slice(0, 4);
+  const css = `
+.drows{margin-top:34px;max-width:760px}
+.drows li{display:flex;gap:22px;padding:20px 0;border-bottom:1px solid var(--line);align-items:baseline}
+.drows i{font-style:normal;color:var(--accent);font-size:12px;letter-spacing:.12em}
+.dcards{display:grid;grid-template-columns:repeat(4,1fr);gap:14px;margin-top:38px}
+.dcards p{font-size:15.5px;line-height:1.65}
+.dicons{display:grid;grid-template-columns:repeat(2,1fr);gap:28px 44px;margin-top:38px}
+.dicons li{display:flex;gap:16px;align-items:flex-start}
+.dicons .dot{flex:0 0 34px;height:34px;border-radius:50%;background:color-mix(in srgb,var(--accent) 16%,transparent);color:var(--accent);display:grid;place-items:center;font-size:13px;font-weight:700}
+@media(max-width:860px){.dcards,.dicons{grid-template-columns:1fr}}`;
+  const h = head(b, "Por que nos escolhem", "Diferenciais");
+  if (b.variant === "cards") {
+    return {
+      css,
+      body: `<section class="wrap sec">${h}<div class="dcards">${list
+        .map((d, i) => `<div class="card rv" data-d="${i + 1}"><p>${esc(d)}</p></div>`)
+        .join("")}</div></section>`,
+    };
+  }
+  if (b.variant === "icons") {
+    return {
+      css,
+      body: `<section class="wrap sec">${h}<ul class="dicons">${list
+        .map(
+          (d, i) =>
+            `<li class="rv" data-d="${i + 1}"><span class="dot">0${i + 1}</span><span>${esc(d)}</span></li>`,
+        )
+        .join("")}</ul></section>`,
+    };
+  }
+  return {
+    css,
+    body: `<section class="wrap sec">${h}<ul class="drows">${list
+      .map((d, i) => `<li class="rv" data-d="${i + 1}"><i>0${i + 1}</i><span>${esc(d)}</span></li>`)
+      .join("")}</ul></section>`,
+  };
+}
+
+/* -------------------------------- process --------------------------------- */
+
+function process(x: Ctx, b: SiteBlock): Parts {
+  const items = (b.items ?? []).filter((i) => i?.title).slice(0, 4);
+  if (items.length === 0) return { css: "", body: "" };
+  const css = `
+.steps{display:grid;grid-template-columns:repeat(${items.length},1fr);gap:16px;margin-top:40px}
+.steps .n{font-size:13px;letter-spacing:.16em;color:var(--accent);display:block;margin-bottom:14px}
+.steps h3{font-size:18px;margin-bottom:9px}
+.steps p{color:var(--muted);font-size:14.5px;line-height:1.7}
+.tline{margin-top:40px;border-left:2px solid var(--line);padding-left:32px;display:grid;gap:34px}
+.tline li{position:relative}
+.tline li::before{content:"";position:absolute;left:-40px;top:8px;width:12px;height:12px;border-radius:50%;background:var(--accent)}
+.tline h3{font-size:19px;margin-bottom:8px}
+.tline p{color:var(--muted);line-height:1.75}
+@media(max-width:860px){.steps{grid-template-columns:1fr}}`;
+  const h = head(b, "Como funciona", "Processo");
+  if (b.variant === "timeline") {
+    return {
+      css,
+      body: `<section class="wrap sec">${h}<ul class="tline">${items
+        .map(
+          (it, i) =>
+            `<li class="rv" data-d="${i + 1}"><h3>${esc(it.title)}</h3><p>${esc(it.text ?? "")}</p></li>`,
+        )
+        .join("")}</ul></section>`,
+    };
+  }
+  return {
+    css,
+    body: `<section class="wrap sec">${h}<div class="steps">${items
+      .map(
+        (it, i) =>
+          `<div class="rv" data-d="${i + 1}"><span class="n">0${i + 1}</span><h3>${esc(it.title)}</h3><p>${esc(it.text ?? "")}</p></div>`,
+      )
+      .join("")}</div></section>`,
+  };
+}
+
+/* ---------------------------------- faq ----------------------------------- */
+
+function faq(x: Ctx, b: SiteBlock): Parts {
+  const items = (b.items ?? []).filter((i) => i?.title && i.text).slice(0, 6);
+  if (items.length === 0) return { css: "", body: "" };
+  const css = `
+.faq{margin-top:36px;max-width:840px;border-top:1px solid var(--line)}
+.faq details{border-bottom:1px solid var(--line)}
+.faq summary{cursor:pointer;list-style:none;padding:22px 0;font-size:17.5px;font-weight:600;display:flex;justify-content:space-between;gap:20px;align-items:center}
+.faq summary::-webkit-details-marker{display:none}
+.faq summary::after{content:"+";color:var(--accent);font-size:22px;transition:transform .3s}
+.faq details[open] summary::after{transform:rotate(45deg)}
+.faq p{color:var(--muted);line-height:1.85;padding:0 0 24px;max-width:64ch}`;
+  return {
+    css,
+    body: `<section class="wrap sec">${head(b, "Perguntas frequentes", "Dúvidas")}<div class="faq">${items
+      .map(
+        (it) =>
+          `<details class="rv"><summary>${esc(it.title)}</summary><p>${esc(it.text ?? "")}</p></details>`,
+      )
+      .join("")}</div></section>`,
+  };
+}
+
+/* --------------------------------- quote ---------------------------------- */
+
+function quote(x: Ctx, b: SiteBlock): Parts {
+  const text = b.title ?? x.c.headline;
+  const css = `
+.quote{padding:calc(var(--pad) * .9) 0;border-top:1px solid var(--line);border-bottom:1px solid var(--line)}
+.quote p{font-family:inherit;font-size:clamp(24px,3.6vw,44px);line-height:1.24;letter-spacing:-.03em;max-width:20ch}
+.quote .who{margin-top:26px;font-size:13px;letter-spacing:.16em;text-transform:uppercase;color:var(--accent)}`;
+  return {
+    css,
+    body: `<section class="wrap quote"><p class="dsp rv">${esc(text)}</p><div class="who rv" data-d="1">${esc(x.lead.name)} · ${esc(x.lead.city)}</div></section>`,
+  };
+}
+
+/* ---------------------------------- cta ----------------------------------- */
+
+function ctaBlock(x: Ctx, b: SiteBlock): Parts {
+  const css = `
+.ctab{background:var(--bg2);border-radius:var(--rad);padding:clamp(38px,6vw,76px);margin:var(--pad) 0;text-align:center}
+.ctab p{color:var(--muted);margin-top:18px;max-width:52ch;margin-inline:auto;line-height:1.8}
+.ctab .btn{margin-top:32px}
+.ctas{display:grid;grid-template-columns:1.1fr .9fr;gap:44px;align-items:center;background:var(--bg2);border-radius:var(--rad);padding:clamp(32px,4.4vw,58px);margin:var(--pad) 0;text-align:left}
+.ctas p{color:var(--muted);line-height:1.8;margin-top:16px}
+@media(max-width:860px){.ctas{grid-template-columns:1fr;gap:26px}}`;
+  const title = b.title ?? x.c.headline;
+  const sub = x.c.subheadline;
+  if (b.variant === "split") {
+    return {
+      css,
+      body: `<section class="wrap"><div class="ctas rv"><div><h2>${esc(title)}</h2><p>${esc(sub)}</p></div><div><a class="btn primary" href="${x.cta}">${esc(x.label)}</a></div></div></section>`,
+    };
+  }
+  return {
+    css,
+    body: `<section class="wrap"><div class="ctab rv"><h2>${esc(title)}</h2><p>${esc(sub)}</p><a class="btn primary" href="${x.cta}">${esc(x.label)}</a></div></section>`,
+  };
+}
+
+const BLOCKS: Record<SiteBlockKind, (x: Ctx, b: SiteBlock) => Parts> = {
+  hero,
+  stats,
+  services,
+  gallery,
+  about,
+  differentials,
+  process,
+  faq,
+  quote,
+  cta: ctaBlock,
+};
 /* -------------------------------------------------------------------------- */
 /*  Entry point                                                                */
 /* -------------------------------------------------------------------------- */
 
-const BUILDERS: Record<SiteLayout, (l: Lead, c: SiteSection, i: Identity) => Parts> = {
-  editorial,
-  immersive,
-  showcase,
-  minimal,
+function navBar(lead: Lead, id: Identity, cta: string, label: string, ids: string[]): string {
+  const links = [
+    ids.includes("servicos") ? '<a href="#servicos">Serviços</a>' : "",
+    ids.includes("sobre") ? '<a href="#sobre">Sobre</a>' : "",
+    '<a href="#contato">Contato</a>',
+  ].join("");
+  return (
+    '<header class="wrap nav" data-nav><a class="brand" href="#top">' +
+    logoMark(lead, id) +
+    esc(lead.name) +
+    '</a><nav class="links">' +
+    links +
+    '</nav><a class="btn primary" href="' +
+    cta +
+    '">' +
+    esc(label) +
+    "</a></header>"
+  );
+}
+
+/**
+ * Structured data for the business. Invisible on the page, but it is what makes
+ * the link look like a real business when the owner shares it, and what search
+ * engines read — a concrete argument the demo is better than their current site.
+ */
+function jsonLd(lead: Lead, content: SiteSection, id: Identity): string {
+  const data: Record<string, unknown> = {
+    "@context": "https://schema.org",
+    "@type": "LocalBusiness",
+    name: lead.name,
+    description: content.subheadline || content.about || undefined,
+    image: id.images.slice(0, 3),
+    address: { "@type": "PostalAddress", streetAddress: lead.address, addressLocality: lead.city },
+    telephone: lead.phone,
+    aggregateRating:
+      lead.reviews > 0
+        ? {
+            "@type": "AggregateRating",
+            ratingValue: lead.rating,
+            reviewCount: lead.reviews,
+          }
+        : undefined,
+  };
+  return (
+    '<script type="application/ld+json">' +
+    JSON.stringify(data).replaceAll("<", "\\u003c") +
+    "</script>"
+  );
+}
+
+/** Favicon drawn from the brand mark, so the tab is not a blank page icon. */
+function favicon(id: Identity): string {
+  const svg =
+    `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 64 64">` +
+    `<rect width="64" height="64" rx="14" fill="${id.accent}"/>` +
+    `<text x="50%" y="52%" dy=".35em" text-anchor="middle" font-family="Inter,system-ui,sans-serif" ` +
+    `font-size="30" font-weight="700" fill="${id.onAccent}">${esc(id.mono)}</text></svg>`;
+  return '<link rel="icon" href="data:image/svg+xml,' + encodeURIComponent(svg) + '">';
+}
+
+/**
+ * Reports opens, attention and CTA clicks back to the app. Without it the
+ * seller sends a link into the void; with it they know who is looking.
+ */
+function tracker(slug: string, trackUrl: string): string {
+  const base = trackUrl.replace(/\/+$/, "") + "/t/" + encodeURIComponent(slug);
+  return (
+    "<script>(function(){var B=" +
+    JSON.stringify(base) +
+    ";function h(k,s){var u=B+'?k='+k+(s?'&s='+s:'')+'&_='+Date.now();" +
+    "if(navigator.sendBeacon){navigator.sendBeacon(u)}else{(new Image()).src=u}}" +
+    "h('view');var t=0,i=setInterval(function(){if(!document.hidden){t+=15;" +
+    "if(t<=300)h('heartbeat',t);else clearInterval(i)}},15000);" +
+    "document.addEventListener('click',function(e){var a=e.target.closest&&e.target.closest('a[href*=\"wa.me\"],a[href^=\"tel:\"]');" +
+    "if(a)h('whatsapp',t)},true);})();</script>"
+  );
+}
+
+export type RenderOptions = {
+  /** Slug of the stored site — the key the beacon reports under. */
+  slug?: string | undefined;
+  /** Origin of this app, where the beacon is sent. */
+  trackUrl?: string | undefined;
+  /** >0 renders an alternative take on the same copy. */
+  remix?: number | undefined;
 };
 
-export function renderSiteHtml(lead: Lead, content: SiteSection, template: string): string {
-  const id = identityOf(lead, content, template);
-  const { css, body } = BUILDERS[id.layout](lead, content, id);
-  // The WhatsApp button and the map footer are standard on every layout.
-  const shared = standardCss(id);
+export function renderSiteHtml(
+  lead: Lead,
+  content: SiteSection,
+  template: string,
+  options: RenderOptions = {},
+): string {
+  const id = identityOf(lead, content, template, options.remix ?? 0);
+  const label = ctaLabel(content.cta || "Falar no WhatsApp");
+  const cta = phoneHref(lead.phone);
+
+  // Photos are handed out in order across the whole page, so a business with
+  // eight real photos shows eight different ones instead of repeating the hero.
+  let cursor = 0;
+  const next = (n = 1): string[] => {
+    const out: string[] = [];
+    for (let i = 0; i < n && id.images.length > 0; i++) {
+      out.push(id.images[cursor++ % id.images.length]!);
+    }
+    return out;
+  };
+  const x: Ctx = { lead, c: content, id, cta, label, next };
+
+  const seen = new Set<string>();
+  const css: string[] = [];
+  const body: string[] = [];
+  for (const block of id.blocks) {
+    const render = BLOCKS[block.kind];
+    if (!render) continue;
+    const part = render(x, block);
+    if (!part.body) continue;
+    // Each kind contributes its stylesheet once, however often it appears.
+    const key = block.kind + ":" + (block.variant ?? "");
+    if (!seen.has(key)) {
+      seen.add(key);
+      css.push(part.css);
+    }
+    body.push(part.body);
+  }
+
+  const anchors = id.blocks.map((b) =>
+    b.kind === "services" ? "servicos" : b.kind === "about" ? "sobre" : "",
+  );
   const description = (content.subheadline || content.about || lead.name).slice(0, 155);
+  const hero0 = id.images[0] ?? "";
 
   return (
     '<!doctype html><html lang="pt-BR"><head><meta charset="utf-8">' +
@@ -911,8 +1179,14 @@ export function renderSiteHtml(lead: Lead, content: SiteSection, template: strin
     '"><meta property="og:description" content="' +
     esc(description) +
     '"><meta property="og:image" content="' +
-    esc(id.images[0] ?? "") +
+    esc(hero0) +
     '"><meta property="og:type" content="website">' +
+    favicon(id) +
+    '<link rel="preconnect" href="https://fonts.googleapis.com">' +
+    '<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>' +
+    '<link rel="stylesheet" href="' +
+    FONTS[id.typeface].href +
+    '">' +
     "<title>" +
     esc(lead.name) +
     " — " +
@@ -920,11 +1194,19 @@ export function renderSiteHtml(lead: Lead, content: SiteSection, template: strin
     "</title><style>" +
     palette(id) +
     RESET +
-    css +
-    shared +
+    systemCss(id) +
+    css.join("") +
+    standardCss(id) +
     "</style></head><body>" +
-    body +
+    navBar(lead, id, cta, label, anchors) +
+    '<main id="top">' +
+    body.join("") +
+    "</main>" +
+    whatsappFab(lead, label) +
+    mapFooter(lead, id) +
+    jsonLd(lead, content, id) +
     SCRIPT +
+    (options.slug && options.trackUrl ? tracker(options.slug, options.trackUrl) : "") +
     "</body></html>"
   );
 }

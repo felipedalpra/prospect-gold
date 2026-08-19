@@ -31,7 +31,7 @@ export const Route = createFileRoute("/app/campanhas")({
 type LogEntry = { text: string; status: "running" | "done" | "failed" };
 
 function Campanhas() {
-  const { state, prospect, buildSite, publishSite, writeMessage, keyFor, llmProvider } = useStore();
+  const { state, prospect, enqueue, drainQueue, keyFor, llmProvider } = useStore();
   const [niche, setNiche] = useState(state.profile.targets[0] ?? "");
   const [location, setLocation] = useState(state.profile.location);
   const [howMany, setHowMany] = useState(5);
@@ -87,36 +87,33 @@ function Campanhas() {
       // Work the best-scoring leads first; the rest stay in the list for later.
       const targets = leads.slice(0, howMany);
 
-      for (const lead of targets) {
-        const siteStep = push(`Escrevendo o site de ${lead.name}...`);
-        try {
-          await buildSite(lead.id);
-          sites++;
-          settle(siteStep, "done", `Site de ${lead.name} pronto`);
-        } catch (err) {
-          settle(siteStep, "failed", `Site de ${lead.name}: ${errText(err)}`);
-          continue; // no site means no link to send — skip the rest for this lead
-        }
+      // The plan is written to the database before a single call is made, so
+      // closing the tab pauses the campaign instead of throwing it away — any
+      // session that opens later picks it up from where this one stopped.
+      const queueStep = push("Montando a fila de trabalho...");
+      await enqueue(
+        targets.flatMap((lead) => [
+          { leadId: lead.id, kind: "site" as const },
+          ...(alsoPublish && hasNetlify ? [{ leadId: lead.id, kind: "publish" as const }] : []),
+          { leadId: lead.id, kind: "message" as const },
+        ]),
+      );
+      settle(
+        queueStep,
+        "done",
+        `${targets.length} negócio(s) na fila — pode fechar a aba, o trabalho continua depois`,
+      );
 
-        if (alsoPublish && hasNetlify) {
-          const pubStep = push(`Publicando o site de ${lead.name}...`);
-          try {
-            const url = await publishSite(lead.id);
-            settle(pubStep, "done", `Publicado: ${url}`);
-          } catch (err) {
-            settle(pubStep, "failed", `Publicação de ${lead.name}: ${errText(err)}`);
-          }
-        }
-
-        const msgStep = push(`Escrevendo a abordagem para ${lead.name}...`);
-        try {
-          await writeMessage(lead.id, "Consultiva", "WhatsApp");
-          msgs++;
-          settle(msgStep, "done", `Abordagem de ${lead.name} pronta`);
-        } catch (err) {
-          settle(msgStep, "failed", `Abordagem de ${lead.name}: ${errText(err)}`);
-        }
-      }
+      const runStep = push("Trabalhando a fila...");
+      const outcome = await drainQueue();
+      sites = outcome.sites;
+      msgs = outcome.messages;
+      settle(
+        runStep,
+        outcome.failed > 0 ? "failed" : "done",
+        `${sites} site(s) e ${msgs} abordagem(ns) prontos` +
+          (outcome.failed > 0 ? ` · ${outcome.failed} falha(s)` : ""),
+      );
 
       setResult({ leads: leads.length, sites, msgs });
       toast.success("Sua campanha está pronta");

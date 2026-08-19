@@ -7,7 +7,10 @@ import type {
   Profile,
   Provider,
   ScoreReason,
+  SiteAudit,
   SiteSection,
+  SiteVariant,
+  VisitStats,
   Stage,
 } from "./types";
 
@@ -29,6 +32,9 @@ type LeadRow = {
   instagram: string | null;
   address: string;
   place_id: string | null;
+  images: string[] | null;
+  follow_up_at: string | null;
+  site_audit: SiteAudit | null;
   score: number;
   reasons: ScoreReason[];
   stage: string;
@@ -46,6 +52,7 @@ type SiteRow = {
   html: string;
   published: boolean;
   url: string | null;
+  variants: SiteVariant[] | null;
   deploy_meta: Record<string, unknown>;
   created_at: string;
 };
@@ -63,6 +70,7 @@ function toSite(row: SiteRow): LeadSite {
     slug: row.slug,
     published: row.published,
     url: row.url ?? undefined,
+    variants: row.variants ?? [],
     netlifySiteId: (row.deploy_meta?.["netlifySiteId"] as string | undefined) ?? undefined,
     createdAt: row.created_at,
   };
@@ -82,6 +90,9 @@ function toLead(row: LeadRow, site?: SiteRow | undefined): Lead {
     instagram: row.instagram ?? undefined,
     address: row.address,
     placeId: row.place_id ?? undefined,
+    images: row.images ?? [],
+    followUpAt: row.follow_up_at ?? undefined,
+    siteAudit: row.site_audit ?? undefined,
     score: row.score,
     reasons: row.reasons ?? [],
     stage: row.stage as Stage,
@@ -108,6 +119,7 @@ function leadInsert(lead: Lead, userId: string, campaignId?: string) {
     instagram: lead.instagram ?? null,
     address: lead.address,
     place_id: lead.placeId ?? null,
+    images: lead.images ?? [],
     score: lead.score,
     reasons: lead.reasons,
     stage: lead.stage,
@@ -127,6 +139,10 @@ function leadPatch(patch: Partial<Lead>) {
   if (patch.message !== undefined) out["message"] = patch.message ?? null;
   if (patch.activities !== undefined) out["activities"] = patch.activities;
   if (patch.campaignId !== undefined) out["campaign_id"] = patch.campaignId ?? null;
+  if (patch.images !== undefined) out["images"] = patch.images ?? [];
+  // `followUpAt` present but undefined means "clear it".
+  if ("followUpAt" in patch) out["follow_up_at"] = patch.followUpAt ?? null;
+  if (patch.siteAudit !== undefined) out["site_audit"] = patch.siteAudit ?? null;
   return out;
 }
 
@@ -219,6 +235,20 @@ export async function saveIntegration(userId: string, provider: Provider, apiKey
   if (error) throw error;
 }
 
+/** Extra settings that ride along an integration, e.g. the Netlify domain. */
+export async function saveIntegrationMeta(
+  userId: string,
+  provider: Provider,
+  meta: Record<string, unknown>,
+): Promise<void> {
+  const { error } = await supabase
+    .from("integrations")
+    .update({ meta, updated_at: new Date().toISOString() })
+    .eq("user_id", userId)
+    .eq("provider", provider);
+  if (error) throw error;
+}
+
 export async function deleteIntegration(userId: string, provider: Provider) {
   const { error } = await supabase
     .from("integrations")
@@ -233,22 +263,27 @@ export async function updateProfile(userId: string, patch: Partial<Profile & { c
   if (error) throw error;
 }
 
-export async function spendCredits(userId: string, amount: number) {
-  const { data, error } = await supabase
-    .from("profiles")
-    .select("credits")
-    .eq("id", userId)
-    .single();
-  if (error) throw error;
-  const next = Math.max(0, (data as { credits: number }).credits - amount);
-  await updateProfile(userId, { credits: next });
-  return next;
+/**
+ * Debits credits through a security-definer function. The browser used to read
+ * the balance, subtract and write it back, which meant anyone with the console
+ * open could hand themselves free runs. Postgres now owns the arithmetic and
+ * refuses to go below zero.
+ */
+export async function spendCredits(amount: number): Promise<number> {
+  const { data, error } = await supabase.rpc("spend_credits", { amount });
+  if (error) {
+    if (/insufficient credits/i.test(error.message)) {
+      throw new Error("Créditos insuficientes para esta ação.");
+    }
+    throw error;
+  }
+  return data as number;
 }
 
 /**
- * Inserts scraped leads, skipping any the user already has. The unique index on
- * (user_id, lower(name), lower(city)) is what actually enforces dedupe, so a
- * concurrent run can't slip a duplicate past us.
+ * Inserts scraped leads, skipping any the user already has. The name/city check
+ * below is a cheap prefilter; the unique index on (user_id, place_id) is what
+ * actually enforces dedupe, so a concurrent run can't slip a duplicate past us.
  */
 export async function insertLeads(
   userId: string,
@@ -257,13 +292,15 @@ export async function insertLeads(
 ): Promise<Lead[]> {
   if (leads.length === 0) return [];
 
-  const { data: existing } = await supabase.from("leads").select("name, city");
-  const seen = new Set(
-    ((existing as { name: string; city: string }[] | null) ?? []).map(
-      (l) => `${l.name.toLowerCase()}|${l.city.toLowerCase()}`,
-    ),
+  const { data: existing } = await supabase.from("leads").select("name, city, place_id");
+  const rows = (existing as { name: string; city: string; place_id: string | null }[] | null) ?? [];
+  const seen = new Set(rows.map((l) => `${l.name.toLowerCase()}|${l.city.toLowerCase()}`));
+  const places = new Set(rows.map((l) => l.place_id).filter(Boolean));
+  const fresh = leads.filter(
+    (l) =>
+      !(l.placeId && places.has(l.placeId)) &&
+      !seen.has(`${l.name.toLowerCase()}|${l.city.toLowerCase()}`),
   );
-  const fresh = leads.filter((l) => !seen.has(`${l.name.toLowerCase()}|${l.city.toLowerCase()}`));
   if (fresh.length === 0) return [];
 
   const { data, error } = await supabase
@@ -307,7 +344,13 @@ export async function appendActivity(lead: Lead, text: string): Promise<Lead["ac
 export async function upsertSite(
   userId: string,
   leadId: string,
-  site: { template: string; content: SiteSection; html: string; slug: string },
+  site: {
+    template: string;
+    content: SiteSection;
+    html: string;
+    slug: string;
+    variants?: SiteVariant[] | undefined;
+  },
 ): Promise<LeadSite> {
   const { data, error } = await supabase
     .from("sites")
@@ -319,6 +362,7 @@ export async function upsertSite(
         template: site.template,
         content: site.content,
         html: site.html,
+        ...(site.variants ? { variants: site.variants } : {}),
       },
       { onConflict: "lead_id" },
     )
@@ -377,4 +421,96 @@ export async function fetchPublishedSite(slug: string): Promise<{ html: string }
     .maybeSingle();
   if (error) throw error;
   return (data as { html: string } | null) ?? null;
+}
+
+/* -------------------------------------------------------------------------- */
+/*  Engagement                                                                 */
+/* -------------------------------------------------------------------------- */
+
+/**
+ * Rolls the raw beacon rows up per lead. This is the signal that changes how a
+ * seller works the list: a business that opened the demo three times is a call
+ * to make today, not a message to send someday.
+ */
+export async function fetchVisitStats(): Promise<Map<string, VisitStats>> {
+  const { data, error } = await supabase
+    .from("site_visits")
+    .select("lead_id, kind, seconds, created_at")
+    .order("created_at", { ascending: false })
+    .limit(5000);
+  if (error) return new Map();
+
+  const rows =
+    (data as { lead_id: string; kind: string; seconds: number; created_at: string }[] | null) ?? [];
+  const out = new Map<string, VisitStats>();
+  for (const r of rows) {
+    const cur = out.get(r.lead_id) ?? { views: 0, whatsappClicks: 0, seconds: 0 };
+    if (r.kind === "view") cur.views++;
+    if (r.kind === "whatsapp") cur.whatsappClicks++;
+    cur.seconds = Math.max(cur.seconds, r.seconds ?? 0);
+    // Rows arrive newest first, so the first one seen per lead is the latest.
+    cur.lastAt ??= r.created_at;
+    out.set(r.lead_id, cur);
+  }
+  return out;
+}
+
+/* -------------------------------------------------------------------------- */
+/*  Jobs                                                                       */
+/*  Campaign work is written down before it runs, so closing the tab pauses it */
+/*  instead of losing it.                                                      */
+/* -------------------------------------------------------------------------- */
+
+export type JobRow = {
+  id: string;
+  campaign_id: string | null;
+  lead_id: string | null;
+  kind: "site" | "publish" | "message";
+  status: "pending" | "running" | "done" | "failed";
+  error: string | null;
+  attempts: number;
+  created_at: string;
+};
+
+export async function enqueueJobs(
+  userId: string,
+  jobs: { leadId: string; kind: JobRow["kind"]; campaignId?: string | undefined }[],
+): Promise<void> {
+  if (jobs.length === 0) return;
+  const { error } = await supabase.from("jobs").insert(
+    jobs.map((j) => ({
+      user_id: userId,
+      lead_id: j.leadId,
+      campaign_id: j.campaignId ?? null,
+      kind: j.kind,
+    })),
+  );
+  if (error) throw error;
+}
+
+export async function fetchPendingJobs(): Promise<JobRow[]> {
+  const { data, error } = await supabase
+    .from("jobs")
+    .select("*")
+    .in("status", ["pending", "running"])
+    .order("created_at", { ascending: true })
+    .limit(200);
+  if (error) return [];
+  return (data as JobRow[] | null) ?? [];
+}
+
+export async function markJob(
+  id: string,
+  status: JobRow["status"],
+  error?: string | undefined,
+): Promise<void> {
+  await supabase
+    .from("jobs")
+    .update({ status, error: error ?? null, updated_at: new Date().toISOString() })
+    .eq("id", id);
+}
+
+/** Drops finished work so the queue view stays about what is left to do. */
+export async function clearFinishedJobs(): Promise<void> {
+  await supabase.from("jobs").delete().in("status", ["done", "failed"]);
 }

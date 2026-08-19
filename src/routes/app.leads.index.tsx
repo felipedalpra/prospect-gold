@@ -1,13 +1,15 @@
-import { useMemo, useState } from "react";
+import { useMemo, useRef, useState } from "react";
 import { createFileRoute } from "@tanstack/react-router";
 import { toast } from "sonner";
 import { Input } from "@/components/ui/input";
 import { Button } from "@/components/ui/button";
 import { LeadsTable } from "@/components/app/LeadsTable";
 import { useStore } from "@/lib/store";
-import { STAGES } from "@/lib/types";
+import { PROSPECT_STAGES, isProspect, isReadyToSend } from "@/lib/buckets";
 import { cn } from "@/lib/utils";
-import { Search } from "lucide-react";
+import { downloadCsv, leadsToCsv, parseLeadsCsv } from "@/lib/csv";
+import { ArrowRight, Download, Search, Upload } from "lucide-react";
+import { Link } from "@tanstack/react-router";
 
 export const Route = createFileRoute("/app/leads/")({
   head: () => ({
@@ -25,7 +27,8 @@ export const Route = createFileRoute("/app/leads/")({
 });
 
 function LeadsPage() {
-  const { state, buildSite, llmProvider } = useStore();
+  const { state, buildSite, importLeads, llmProvider } = useStore();
+  const fileRef = useRef<HTMLInputElement>(null);
   const [q, setQ] = useState("");
   const [stage, setStage] = useState<string>("Todos");
   const [selected, setSelected] = useState<string[]>([]);
@@ -53,32 +56,83 @@ function LeadsPage() {
     setBuilding(false);
   }
 
+  // This screen is the top of the funnel only: leads with no site yet. Once a
+  // site exists the lead moves on to Sites, and once approached, to Abordagens.
+  const pool = useMemo(() => state.leads.filter(isProspect), [state.leads]);
+  const withSite = useMemo(() => state.leads.filter(isReadyToSend).length, [state.leads]);
+
   const leads = useMemo(
     () =>
-      state.leads.filter(
+      pool.filter(
         (l) =>
           (stage === "Todos" || l.stage === stage) &&
           (l.name.toLowerCase().includes(q.toLowerCase()) ||
             l.category.toLowerCase().includes(q.toLowerCase()) ||
             l.city.toLowerCase().includes(q.toLowerCase())),
       ),
-    [state.leads, q, stage],
+    [pool, q, stage],
   );
 
   return (
     <div className="space-y-6">
       <header className="flex flex-wrap items-end justify-between gap-4">
         <div>
-          <p className="text-xs uppercase tracking-widest text-primary">Leads</p>
-          <h1 className="mt-1 text-3xl font-bold">{state.leads.length} oportunidades na base</h1>
+          <p className="text-xs uppercase tracking-widest text-primary">Leads · sem site</p>
+          <h1 className="mt-1 text-3xl font-bold">{pool.length} oportunidades para trabalhar</h1>
+          <p className="mt-1 text-sm text-muted-foreground">
+            Assim que o site é gerado, o lead sai desta lista.
+          </p>
         </div>
-        <Button
-          variant="gold"
-          disabled={selected.length === 0 || building}
-          onClick={() => void build(selected)}
-        >
-          {building ? "Gerando..." : `Gerar sites selecionados (${selected.length})`}
-        </Button>
+        <div className="flex flex-wrap gap-2">
+          <input
+            ref={fileRef}
+            type="file"
+            accept=".csv,text/csv"
+            className="hidden"
+            onChange={(e) => {
+              const file = e.target.files?.[0];
+              e.target.value = "";
+              if (!file) return;
+              void file.text().then(async (text) => {
+                const rows = parseLeadsCsv(text);
+                if (rows.length === 0) {
+                  toast.error("Não encontrei leads nesse CSV. Precisa de uma coluna de nome.");
+                  return;
+                }
+                try {
+                  const added = await importLeads(rows);
+                  toast.success(
+                    added === rows.length
+                      ? `${added} lead(s) importado(s)`
+                      : `${added} importado(s) · ${rows.length - added} já estavam na base`,
+                  );
+                } catch (err) {
+                  toast.error(err instanceof Error ? err.message : "Falha ao importar.");
+                }
+              });
+            }}
+          />
+          <Button variant="ghost" onClick={() => fileRef.current?.click()}>
+            <Upload className="h-4 w-4" /> Importar CSV
+          </Button>
+          <Button
+            variant="ghost"
+            disabled={state.leads.length === 0}
+            onClick={() => {
+              downloadCsv("leads.csv", leadsToCsv(state.leads));
+              toast.success("leads.csv baixado");
+            }}
+          >
+            <Download className="h-4 w-4" /> Exportar
+          </Button>
+          <Button
+            variant="gold"
+            disabled={selected.length === 0 || building}
+            onClick={() => void build(selected)}
+          >
+            {building ? "Gerando..." : `Gerar sites selecionados (${selected.length})`}
+          </Button>
+        </div>
       </header>
 
       <div className="flex flex-wrap items-center gap-3">
@@ -92,7 +146,7 @@ function LeadsPage() {
           />
         </div>
         <div className="flex flex-wrap gap-1.5">
-          {["Todos", ...STAGES].map((s) => (
+          {["Todos", ...PROSPECT_STAGES].map((s) => (
             <button
               key={s}
               onClick={() => setStage(s)}
@@ -108,6 +162,21 @@ function LeadsPage() {
           ))}
         </div>
       </div>
+
+      {withSite > 0 && (
+        <Link
+          to="/app/sites"
+          className="flex items-center justify-between gap-3 rounded-xl border border-primary/25 bg-primary/6 px-4 py-3 text-sm transition-colors hover:border-primary/50"
+        >
+          <span>
+            <b className="text-primary">{withSite}</b> lead(s) já com site gerado, prontos para
+            enviar.
+          </span>
+          <span className="inline-flex items-center gap-1.5 text-xs text-primary">
+            Ver em Sites <ArrowRight className="h-3.5 w-3.5" />
+          </span>
+        </Link>
+      )}
 
       <LeadsTable
         leads={leads}

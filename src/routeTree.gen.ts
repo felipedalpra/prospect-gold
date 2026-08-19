@@ -14,6 +14,7 @@ import { Route as AppRouteImport } from './routes/app'
 import { Route as AuthRouteImport } from './routes/auth'
 import { Route as OnboardingRouteImport } from './routes/onboarding'
 import { Route as AppIndexRouteImport } from './routes/app.index'
+import { Route as AppAbordagensRouteImport } from './routes/app.abordagens'
 import { Route as AppCampanhasRouteImport } from './routes/app.campanhas'
 import { Route as AppConfiguracoesRouteImport } from './routes/app.configuracoes'
 import { Route as AppPipelineRouteImport } from './routes/app.pipeline'
@@ -46,6 +47,11 @@ const OnboardingRoute = OnboardingRouteImport.update({
 const AppIndexRoute = AppIndexRouteImport.update({
   id: '/',
   path: '/',
+  getParentRoute: () => AppRoute,
+} as any)
+const AppAbordagensRoute = AppAbordagensRouteImport.update({
+  id: '/abordagens',
+  path: '/abordagens',
   getParentRoute: () => AppRoute,
 } as any)
 const AppCampanhasRoute = AppCampanhasRouteImport.update({
@@ -94,6 +100,7 @@ export interface FileRoutesByFullPath {
   '/app': typeof AppRouteWithChildren
   '/auth': typeof AuthRoute
   '/onboarding': typeof OnboardingRoute
+  '/app/abordagens': typeof AppAbordagensRoute
   '/app/campanhas': typeof AppCampanhasRoute
   '/app/configuracoes': typeof AppConfiguracoesRoute
   '/app/pipeline': typeof AppPipelineRoute
@@ -108,6 +115,7 @@ export interface FileRoutesByTo {
   '/': typeof IndexRoute
   '/auth': typeof AuthRoute
   '/onboarding': typeof OnboardingRoute
+  '/app/abordagens': typeof AppAbordagensRoute
   '/app/campanhas': typeof AppCampanhasRoute
   '/app/configuracoes': typeof AppConfiguracoesRoute
   '/app/pipeline': typeof AppPipelineRoute
@@ -124,6 +132,7 @@ export interface FileRoutesById {
   '/app': typeof AppRouteWithChildren
   '/auth': typeof AuthRoute
   '/onboarding': typeof OnboardingRoute
+  '/app/abordagens': typeof AppAbordagensRoute
   '/app/campanhas': typeof AppCampanhasRoute
   '/app/configuracoes': typeof AppConfiguracoesRoute
   '/app/pipeline': typeof AppPipelineRoute
@@ -141,6 +150,7 @@ export interface FileRouteTypes {
     | '/app'
     | '/auth'
     | '/onboarding'
+    | '/app/abordagens'
     | '/app/campanhas'
     | '/app/configuracoes'
     | '/app/pipeline'
@@ -155,6 +165,7 @@ export interface FileRouteTypes {
     | '/'
     | '/auth'
     | '/onboarding'
+    | '/app/abordagens'
     | '/app/campanhas'
     | '/app/configuracoes'
     | '/app/pipeline'
@@ -170,6 +181,7 @@ export interface FileRouteTypes {
     | '/app'
     | '/auth'
     | '/onboarding'
+    | '/app/abordagens'
     | '/app/campanhas'
     | '/app/configuracoes'
     | '/app/pipeline'
@@ -224,6 +236,13 @@ declare module '@tanstack/react-router' {
       path: '/'
       fullPath: '/app/'
       preLoaderRoute: typeof AppIndexRouteImport
+      parentRoute: typeof AppRoute
+    }
+    '/app/abordagens': {
+      id: '/app/abordagens'
+      path: '/abordagens'
+      fullPath: '/app/abordagens'
+      preLoaderRoute: typeof AppAbordagensRouteImport
       parentRoute: typeof AppRoute
     }
     '/app/campanhas': {
@@ -286,6 +305,7 @@ declare module '@tanstack/react-router' {
 }
 
 interface AppRouteChildren {
+  AppAbordagensRoute: typeof AppAbordagensRoute
   AppCampanhasRoute: typeof AppCampanhasRoute
   AppConfiguracoesRoute: typeof AppConfiguracoesRoute
   AppPipelineRoute: typeof AppPipelineRoute
@@ -297,6 +317,7 @@ interface AppRouteChildren {
 }
 
 const AppRouteChildren: AppRouteChildren = {
+  AppAbordagensRoute: AppAbordagensRoute,
   AppCampanhasRoute: AppCampanhasRoute,
   AppConfiguracoesRoute: AppConfiguracoesRoute,
   AppPipelineRoute: AppPipelineRoute,

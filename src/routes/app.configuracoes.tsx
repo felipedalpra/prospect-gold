@@ -1,6 +1,7 @@
+import { useState } from "react";
 import { createFileRoute } from "@tanstack/react-router";
 import { toast } from "sonner";
-import { useStore } from "@/lib/store";
+import { useStore, COST_USD } from "@/lib/store";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Button } from "@/components/ui/button";
@@ -20,16 +21,18 @@ export const Route = createFileRoute("/app/configuracoes")({
   component: Config,
 });
 
-const PROVIDERS: Provider[] = ["apify", "anthropic", "openai", "netlify"];
+const PROVIDERS: Provider[] = ["apify", "anthropic", "openai", "netlify", "google"];
 
 const COSTS = [
-  ["Busca de leads", "1 crédito por lead"],
-  ["Site gerado", "5 créditos"],
-  ["Mensagem gerada", "1 crédito"],
-];
+  ["Busca de leads", "1 crédito por lead", COST_USD.lead],
+  ["Site gerado", "5 créditos", COST_USD.site],
+  ["Mensagem gerada", "1 crédito", COST_USD.message],
+] as const;
 
 function Config() {
-  const { state, setProfile, llmProvider, keyFor } = useStore();
+  const { state, setProfile, setPublishDomain, llmProvider, keyFor } = useStore();
+  const netlifyMeta = state.integrations.find((i) => i.provider === "netlify")?.meta;
+  const [domain, setDomain] = useState((netlifyMeta?.["domain"] as string | undefined) ?? "");
 
   return (
     <div className="max-w-3xl space-y-6">
@@ -65,6 +68,34 @@ function Config() {
             <ApiKeyCard key={p} provider={p} />
           ))}
         </div>
+
+        {keyFor("netlify") && (
+          <div className="space-y-2 rounded-xl border border-border bg-surface p-4">
+            <Label>Domínio próprio para os sites publicados</Label>
+            <p className="text-xs text-muted-foreground">
+              Cada demo sai em <code>slug.seudominio.com</code> em vez de um endereço netlify.app —
+              o que parece um site de verdade, não um teste. Aponte um CNAME curinga (
+              <code>*.seudominio.com</code>) para o Netlify antes de usar.
+            </p>
+            <div className="flex gap-2">
+              <Input
+                value={domain}
+                onChange={(e) => setDomain(e.target.value)}
+                placeholder="demos.minhaagencia.com.br"
+              />
+              <Button
+                variant="goldline"
+                onClick={() => {
+                  void setPublishDomain(domain)
+                    .then(() => toast.success("Domínio salvo"))
+                    .catch(() => toast.error("Não foi possível salvar o domínio."));
+                }}
+              >
+                Salvar
+              </Button>
+            </div>
+          </div>
+        )}
       </section>
 
       <section className="grid gap-4 rounded-xl border border-border bg-surface p-6 sm:grid-cols-2">
@@ -106,10 +137,15 @@ function Config() {
           </Button>
         </div>
         <ul className="mt-5 space-y-2 text-sm">
-          {COSTS.map(([k, v]) => (
-            <li key={k} className="flex justify-between border-b border-border/50 pb-2">
+          {COSTS.map(([k, v, usd]) => (
+            <li key={k} className="flex justify-between gap-4 border-b border-border/50 pb-2">
               <span className="text-muted-foreground">{k}</span>
-              <span className="text-primary">{v}</span>
+              <span className="text-right">
+                <span className="text-primary">{v}</span>
+                <span className="ml-2 text-[11px] text-muted-foreground">
+                  ≈ US$ {usd.toFixed(3)} nas suas chaves
+                </span>
+              </span>
             </li>
           ))}
         </ul>

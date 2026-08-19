@@ -1,6 +1,6 @@
 import { createServerFn } from "@tanstack/react-start";
-import type { Lead, LlmProvider, SiteLayout, SiteSection } from "../types";
-import { SITE_LAYOUTS } from "../types";
+import type { Lead, LlmProvider, SiteBlock, SiteLayout, SiteSection, SiteVariant } from "../types";
+import { SITE_BLOCK_KINDS, SITE_LAYOUTS, SITE_TYPEFACES } from "../types";
 import { renderSiteHtml } from "../site-renderer";
 import { fetchPlaceImages } from "./apify";
 
@@ -92,13 +92,15 @@ function leadBrief(lead: Lead): string {
 
 const SITE_SYSTEM = `Você é um diretor de arte, UX designer e copywriter sênior que cria landing pages sob medida para pequenos negócios brasileiros.
 
-Você recebe os dados reais de um negócio (extraídos do Google Maps) e devolve a DIREÇÃO VISUAL e o conteúdo dessa página. Cada negócio precisa receber um site visivelmente diferente dos outros — a arquitetura da página, a paleta e o ritmo mudam conforme o segmento, o público e o clima do lugar.
+Você recebe os dados reais de um negócio (extraídos do Google Maps) e devolve a DIREÇÃO VISUAL, a ARQUITETURA e o conteúdo dessa página. Dois negócios do MESMO segmento têm que receber páginas com seções diferentes, em ordem diferente e com tratamento visual diferente. Repetir a mesma estrutura é o pior erro possível aqui.
 
 Responda SEMPRE com um único objeto JSON válido, sem texto antes ou depois, sem cercas de código:
 {
   "template": "nome curto do estilo, ex: clinica-sofisticada",
   "content": {
     "layout": "editorial | immersive | showcase | minimal",
+    "typeface": "sans | serif | mixed | condensed",
+    "shape": "sharp | soft | round",
     "mode": "light | dark",
     "accent": "#RRGGBB",
     "secondary": "#RRGGBB",
@@ -110,21 +112,45 @@ Responda SEMPRE com um único objeto JSON válido, sem texto antes ou depois, se
     "serviceNotes": ["uma frase curta explicando cada serviço, na mesma ordem"],
     "differentials": ["...", "..."],
     "cta": "...",
-    "visualStyle": "descrição curta da direção visual"
+    "visualStyle": "descrição curta da direção visual",
+    "blocks": [ { "kind": "...", "variant": "...", "title": "...", "eyebrow": "...", "items": [...] } ]
   }
 }
 
-Como escolher o LAYOUT (obrigatório escolher de forma consciente, nunca sempre o mesmo):
-- "editorial": tipografia serifada de revista, muito respiro, grid assimétrico, mosaico de fotos. Bom para restaurantes autorais, estúdios, arquitetura, moda, joalheria, hotelaria.
-- "immersive": escuro, foto em tela cheia com parallax, brilho na cor da marca, faixa animada, muitas animações. Bom para barbearias, academias, bares, tatuagem, night life, automotivo, tecnologia.
-- "showcase": o mais completo — herói + números + cards de serviço + galeria grande + sobre + bloco de contato. Bom para clínicas, odontologia, pet shops, oficinas, escolas, imobiliárias, prestadores de serviço em geral.
-- "minimal": branco, tipografia pequena, silêncio visual, poucas imagens. Bom para advocacia, contabilidade, consultoria, psicologia, estética discreta, marcas premium sóbrias.
+## blocks — a arquitetura da página (o campo mais importante)
 
-Como escolher as CORES:
-- accent e secondary devem sair da identidade provável do negócio e do segmento (ex.: verde profundo para clínica natural, âmbar para padaria, azul-petróleo para jurídico, vinho para barbearia). Não use sempre dourado.
-- "mode" escuro só quando combina com o clima do negócio; a maioria dos serviços de saúde e jurídico pede claro.
+Monte de 5 a 8 blocos, na ordem em que aparecem. O primeiro é sempre "hero". Escolha os tipos e as variantes de acordo com o negócio; NÃO use sempre a mesma sequência.
 
-Direção de conteúdo:
+| kind | variantes | usa |
+|---|---|---|
+| hero | split, full, stacked, frame | headline, subheadline, cta |
+| stats | bar, cards | nota e nº de avaliações do Google, cidade, categoria |
+| services | cards, list, grid, alternating | services + serviceNotes |
+| gallery | mosaic, strip, grid, duo | fotos reais do negócio |
+| about | split, wide, overlap | about |
+| differentials | rows, cards, icons | differentials |
+| process | steps, timeline | items: [{title, text}] escritos por você |
+| faq | list | items: [{title (pergunta), text (resposta)}] escritos por você |
+| quote | band | title: uma frase de impacto |
+| cta | band, split | title |
+
+Regras dos blocos:
+- "hero" aparece uma única vez e é o primeiro.
+- Use no máximo 2 blocos de "gallery". Se o negócio tiver poucas fotos, use 1 ou nenhum.
+- "process" e "faq" só entram se você conseguir escrever conteúdo real e útil para AQUELE negócio — e sem inventar fatos.
+- "title" e "eyebrow" são opcionais: escreva títulos de seção específicos do negócio ("Como é a primeira sessão", "O que tratamos") em vez dos genéricos.
+- Varie de verdade: se um psicólogo recebeu hero split + about wide + faq, o próximo psicólogo deve receber algo como hero frame + process timeline + services list.
+
+## Sistema visual
+
+- "layout" define o ritmo e a densidade: editorial (revista, muito respiro), immersive (denso, foto grande, escuro), showcase (completo, cards), minimal (silencioso, estreito). Escolha pelo clima do NEGÓCIO específico — jamais fixe um layout por segmento.
+- "typeface": sans (Inter, neutro), serif (Fraunces, editorial), mixed (Instrument Serif nos títulos), condensed (Oswald, caixa alta, impacto). Varie.
+- "shape": sharp (cantos retos), soft, round.
+- accent e secondary saem da identidade provável do negócio. Não use sempre dourado, e não repita a mesma paleta do segmento — dois psicólogos não podem sair os dois em azul-claro.
+- "mode" escuro só quando combina com o clima do negócio.
+
+## Conteúdo
+
 - Copy curta, concreta e específica ao negócio. Português do Brasil.
 - 3 a 6 serviços, e um serviceNotes para CADA serviço, na mesma ordem (máx. 14 palavras cada).
 - 3 a 4 diferenciais.
@@ -141,14 +167,54 @@ export type GenerateSiteInput = {
   sells: string;
   /** Lets the generator pull the real photos of the place from Apify. */
   apifyKey?: string | undefined;
+  /** Slug the site is stored under — the key the visit beacon reports with. */
+  slug?: string | undefined;
+  /** Origin of this app, so the published page can report visits back. */
+  trackUrl?: string | undefined;
+  /** Also render an alternative take on the same copy. */
+  withVariant?: boolean | undefined;
 };
+
+/** Keeps only blocks the renderer knows how to draw, with sane item lists. */
+function normalizeBlocks(raw: unknown): SiteBlock[] | undefined {
+  if (!Array.isArray(raw)) return undefined;
+  const out: SiteBlock[] = [];
+  for (const entry of raw) {
+    const kind = SITE_BLOCK_KINDS.find((k) => k === (entry as SiteBlock)?.kind);
+    if (!kind) continue;
+    const b = entry as SiteBlock;
+    out.push({
+      kind,
+      variant: typeof b.variant === "string" ? b.variant : undefined,
+      title: typeof b.title === "string" ? b.title : undefined,
+      eyebrow: typeof b.eyebrow === "string" ? b.eyebrow : undefined,
+      items: Array.isArray(b.items)
+        ? b.items
+            .filter((i) => i && typeof i.title === "string")
+            .slice(0, 6)
+            .map((i) => ({ title: i.title, text: typeof i.text === "string" ? i.text : undefined }))
+        : undefined,
+    });
+  }
+  return out.length > 0 ? out.slice(0, 10) : undefined;
+}
 
 function normalizeLayout(value: unknown): SiteLayout | undefined {
   const v = typeof value === "string" ? value.toLowerCase().trim() : "";
   return SITE_LAYOUTS.find((l) => l === v);
 }
 
-export type GeneratedSite = { template: string; content: SiteSection; html: string };
+export type GeneratedSite = {
+  template: string;
+  content: SiteSection;
+  html: string;
+  /** Whether the page is built on the business's own photos or on stock. */
+  photos: "real" | "stock";
+  /** Set when real photos were expected but could not be fetched. */
+  photoWarning?: string | undefined;
+  /** Alternative takes on the same copy, rendered without a second AI call. */
+  variants?: SiteVariant[] | undefined;
+};
 
 export const generateSite = createServerFn({ method: "POST" })
   .validator((d: GenerateSiteInput) => d)
@@ -161,9 +227,10 @@ export const generateSite = createServerFn({ method: "POST" })
       prompt: `Crie a direção visual e o conteúdo estruturado da landing page deste negócio.\n\n${leadBrief(data.lead)}\n\nEsta página será usada como demonstração por alguém que vende ${data.sells || "sites"}. Ela será renderizada com as FOTOS REAIS do negócio, então escolha a arquitetura e as cores que melhor valorizam esse tipo de ambiente. Fuja do óbvio: um site igual ao do concorrente não vende.`,
     });
 
-    let parsed: GeneratedSite;
+    type ParsedSite = { template: string; content: SiteSection };
+    let parsed: ParsedSite;
     try {
-      parsed = JSON.parse(stripFences(raw)) as GeneratedSite;
+      parsed = JSON.parse(stripFences(raw)) as ParsedSite;
     } catch {
       throw new Error("A IA devolveu uma resposta que não pôde ser lida. Tente gerar novamente.");
     }
@@ -171,21 +238,22 @@ export const generateSite = createServerFn({ method: "POST" })
     if (!parsed.template || !parsed.content?.headline || !Array.isArray(parsed.content.services)) {
       throw new Error("A IA não devolveu uma estrutura visual válida. Tente gerar novamente.");
     }
-    // Real photos of the place. Leads round-trip through the database, which
-    // does not persist the scraped image list, so we re-read them here.
-    const images =
-      data.lead.images && data.lead.images.length > 0
-        ? data.lead.images
-        : data.apifyKey
-          ? await fetchPlaceImages({
-              data: {
-                apiKey: data.apifyKey,
-                placeId: data.lead.placeId,
-                query: `${data.lead.name} ${data.lead.city}`.trim(),
-                location: data.lead.city,
-              },
-            })
-          : [];
+    // Real photos of the place. They are persisted with the lead, so this only
+    // repairs leads saved before that, or places whose scrape returned none.
+    let images = data.lead.images ?? [];
+    let photoWarning: string | undefined;
+    if (images.length === 0) {
+      const fetched = await fetchPlaceImages({
+        data: {
+          apiKey: data.apifyKey ?? "",
+          placeId: data.lead.placeId,
+          query: `${data.lead.name} ${data.lead.city}`.trim(),
+          location: data.lead.city,
+        },
+      });
+      images = fetched.images;
+      photoWarning = fetched.error;
+    }
 
     const content: SiteSection = {
       headline: parsed.content.headline,
@@ -208,13 +276,34 @@ export const generateSite = createServerFn({ method: "POST" })
       serviceNotes: Array.isArray(parsed.content.serviceNotes)
         ? parsed.content.serviceNotes
         : undefined,
+      blocks: normalizeBlocks(parsed.content.blocks),
+      typeface: SITE_TYPEFACES.find((t) => t === parsed.content.typeface),
+      shape:
+        parsed.content.shape === "sharp" ||
+        parsed.content.shape === "soft" ||
+        parsed.content.shape === "round"
+          ? parsed.content.shape
+          : undefined,
       images,
       logo: data.lead.logo,
     };
+    const render = { slug: data.slug, trackUrl: data.trackUrl };
     return {
       template: parsed.template,
       content,
-      html: renderSiteHtml(data.lead, content, parsed.template),
+      html: renderSiteHtml(data.lead, content, parsed.template, render),
+      photos: images.length > 0 ? "real" : "stock",
+      ...(photoWarning ? { photoWarning } : {}),
+      // A remix costs no tokens: same copy, re-derived architecture and type.
+      variants: data.withVariant
+        ? [
+            {
+              template: `${parsed.template}-b`,
+              content,
+              html: renderSiteHtml(data.lead, content, parsed.template, { ...render, remix: 1 }),
+            },
+          ]
+        : undefined,
     };
   });
 

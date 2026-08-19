@@ -10,11 +10,17 @@ import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { ScoreRing, scoreLabel } from "@/components/shared/ScoreBadge";
 import { SitePreview } from "@/components/app/SitePreview";
 import { useStore } from "@/lib/store";
+import { copySiteHtml, downloadSiteHtml } from "@/lib/download";
 import { STAGES, type Stage } from "@/lib/types";
 import { cn } from "@/lib/utils";
 import {
   ArrowLeft,
+  CalendarClock,
+  Code2,
+  Eye,
+  Gauge,
   Copy,
+  Download,
   ExternalLink,
   Globe,
   Instagram,
@@ -51,6 +57,10 @@ function LeadDetail() {
     patchSiteContent,
     moveLead,
     writeMessage,
+    auditLead,
+    chooseVariant,
+    sendWhatsApp,
+    setFollowUp,
     llmProvider,
     keyFor,
   } = useStore();
@@ -62,6 +72,8 @@ function LeadDetail() {
   const [tab, setTab] = useState("overview");
   const [tone, setTone] = useState<"Direta" | "Consultiva" | "Casual">("Consultiva");
   const [channel, setChannel] = useState<"WhatsApp" | "Email">("WhatsApp");
+  const [auditing, setAuditing] = useState(false);
+  const [variant, setVariant] = useState(0);
 
   if (state.loading) {
     return (
@@ -128,6 +140,18 @@ function LeadDetail() {
       toast.error(err instanceof Error ? err.message : "Falha ao gerar a abordagem.");
     } finally {
       setWriting(false);
+    }
+  }
+
+  async function runAudit() {
+    setAuditing(true);
+    try {
+      const a = await auditLead(id);
+      toast.success(`Site atual: ${a.performance}/100 no PageSpeed`);
+    } catch (err) {
+      toast.error(err instanceof Error ? err.message : "Falha ao analisar o site.");
+    } finally {
+      setAuditing(false);
     }
   }
 
@@ -283,6 +307,99 @@ function LeadDetail() {
                 ))}
               </dl>
             </section>
+
+            <section className="rounded-xl border border-border bg-surface p-6">
+              <div className="flex items-start justify-between gap-4">
+                <div>
+                  <h2 className="text-sm font-semibold">Site atual do lead</h2>
+                  <p className="mt-1 text-xs text-muted-foreground">
+                    A nota do Google sobre o site que ele já tem — o melhor argumento de venda.
+                  </p>
+                </div>
+                {lead.website && (
+                  <Button
+                    size="sm"
+                    variant="goldline"
+                    onClick={() => void runAudit()}
+                    disabled={auditing}
+                  >
+                    <Gauge className={cn("h-3.5 w-3.5", auditing && "animate-pulse")} />
+                    {auditing ? "Analisando..." : lead.siteAudit ? "Analisar de novo" : "Analisar"}
+                  </Button>
+                )}
+              </div>
+
+              {!lead.website ? (
+                <p className="mt-5 text-sm text-muted-foreground">
+                  Este lead não tem site — esse já é o argumento.
+                </p>
+              ) : lead.siteAudit ? (
+                <div className="mt-5 grid grid-cols-2 gap-4 text-sm sm:grid-cols-4">
+                  {[
+                    [
+                      `${lead.siteAudit.performance}/100`,
+                      "PageSpeed",
+                      lead.siteAudit.performance < 50,
+                    ],
+                    [`${lead.siteAudit.lcp}s`, "Carregamento", lead.siteAudit.lcp > 2.5],
+                    [lead.siteAudit.mobile ? "Sim" : "Não", "Responsivo", !lead.siteAudit.mobile],
+                    [lead.siteAudit.https ? "Sim" : "Não", "HTTPS", !lead.siteAudit.https],
+                  ].map(([value, key, bad]) => (
+                    <div key={String(key)}>
+                      <p
+                        className={cn(
+                          "font-display text-2xl font-bold",
+                          bad ? "text-destructive" : "text-primary",
+                        )}
+                      >
+                        {String(value)}
+                      </p>
+                      <p className="text-xs text-muted-foreground">{String(key)}</p>
+                    </div>
+                  ))}
+                </div>
+              ) : (
+                <p className="mt-5 text-sm text-muted-foreground">
+                  Ainda não analisado. Leva uns 20 segundos e roda no PageSpeed do Google.
+                </p>
+              )}
+            </section>
+
+            <section className="rounded-xl border border-border bg-surface p-6">
+              <h2 className="text-sm font-semibold">Próximo toque</h2>
+              <p className="mt-1 text-xs text-muted-foreground">
+                Prospecção fria fecha no segundo e no terceiro contato, não no primeiro.
+              </p>
+              <p className="mt-4 text-sm">
+                {lead.followUpAt ? (
+                  <>
+                    Agendado para{" "}
+                    <b className="text-primary">
+                      {new Date(lead.followUpAt).toLocaleDateString("pt-BR")}
+                    </b>
+                  </>
+                ) : (
+                  <span className="text-muted-foreground">Sem follow-up agendado.</span>
+                )}
+              </p>
+              <div className="mt-4 flex flex-wrap gap-2">
+                {[1, 3, 7, 14].map((d) => (
+                  <Button
+                    key={d}
+                    size="sm"
+                    variant="goldline"
+                    onClick={() => void setFollowUp(id, d)}
+                  >
+                    <CalendarClock className="h-3.5 w-3.5" /> +{d}d
+                  </Button>
+                ))}
+                {lead.followUpAt && (
+                  <Button size="sm" variant="ghost" onClick={() => void setFollowUp(id, null)}>
+                    Cancelar
+                  </Button>
+                )}
+              </div>
+            </section>
           </div>
         </TabsContent>
 
@@ -301,6 +418,32 @@ function LeadDetail() {
             </div>
           ) : (
             <div className="space-y-5">
+              {lead.visits && lead.visits.views > 0 && (
+                <div className="flex flex-wrap items-center gap-x-6 gap-y-2 rounded-xl border border-success/40 bg-success/8 p-4 text-sm">
+                  <span className="inline-flex items-center gap-2 font-medium text-success">
+                    <Eye className="h-4 w-4" /> O lead abriu este site
+                  </span>
+                  <span>
+                    <b>{lead.visits.views}</b> visita(s)
+                  </span>
+                  {lead.visits.seconds > 0 && (
+                    <span>
+                      ficou <b>{lead.visits.seconds}s</b> na página
+                    </span>
+                  )}
+                  {lead.visits.whatsappClicks > 0 && (
+                    <span className="text-success">
+                      clicou no WhatsApp <b>{lead.visits.whatsappClicks}x</b>
+                    </span>
+                  )}
+                  {lead.visits.lastAt && (
+                    <span className="text-muted-foreground">
+                      última em {new Date(lead.visits.lastAt).toLocaleString("pt-BR")}
+                    </span>
+                  )}
+                </div>
+              )}
+
               <div className="flex flex-wrap items-center gap-3 rounded-xl border border-primary/30 bg-primary/8 p-4">
                 <Rocket className="h-4 w-4 text-primary" />
                 {lead.site.published && lead.site.url ? (
@@ -391,6 +534,37 @@ function LeadDetail() {
                       onChange={(e) => void updateLead(lead.id, { phone: e.target.value })}
                     />
                   </div>
+                  <div className="space-y-2 border-t border-border pt-4">
+                    <h3 className="text-sm font-semibold">Código</h3>
+                    <p className="text-[11px] text-muted-foreground">
+                      O site é um HTML único, sem dependências. Baixe e abra no VS Code para editar
+                      à mão — depois publique o arquivo pelo seu próprio deploy.
+                    </p>
+                    <div className="flex gap-2">
+                      <Button
+                        size="sm"
+                        variant="goldline"
+                        className="flex-1"
+                        onClick={() => {
+                          downloadSiteHtml(lead);
+                          toast.success(`${lead.site!.slug}.html baixado`);
+                        }}
+                      >
+                        <Download className="h-3.5 w-3.5" /> Baixar HTML
+                      </Button>
+                      <Button
+                        size="sm"
+                        variant="ghost"
+                        title="Copiar o HTML"
+                        onClick={() => {
+                          void copySiteHtml(lead).then(() => toast.success("HTML copiado"));
+                        }}
+                      >
+                        <Code2 className="h-3.5 w-3.5" />
+                      </Button>
+                    </div>
+                  </div>
+
                   <div className="flex gap-2 pt-2">
                     <Button
                       variant="gold"
@@ -416,7 +590,53 @@ function LeadDetail() {
                   </div>
                 </div>
 
-                <SitePreview lead={lead} html={lead.site.html} template={lead.site.template} />
+                <div className="space-y-3">
+                  {(lead.site.variants?.length ?? 0) > 0 && (
+                    <div className="flex flex-wrap items-center gap-2">
+                      <span className="text-xs text-muted-foreground">Versões:</span>
+                      {[
+                        "A",
+                        ...(lead.site.variants ?? []).map((_, i) => String.fromCharCode(66 + i)),
+                      ].map((name, i) => (
+                        <button
+                          key={name}
+                          onClick={() => setVariant(i)}
+                          className={cn(
+                            "rounded-full border px-3 py-1 text-xs transition-colors",
+                            variant === i
+                              ? "border-primary/50 bg-primary/12 text-primary"
+                              : "border-border bg-surface-2 text-muted-foreground hover:text-foreground",
+                          )}
+                        >
+                          Versão {name}
+                        </button>
+                      ))}
+                      {variant > 0 && (
+                        <Button
+                          size="sm"
+                          variant="goldline"
+                          onClick={() => {
+                            void chooseVariant(lead.id, variant - 1).then(() => {
+                              setVariant(0);
+                              toast.success("Versão escolhida — publique para atualizar o link");
+                            });
+                          }}
+                        >
+                          Usar esta versão
+                        </Button>
+                      )}
+                    </div>
+                  )}
+                  <SitePreview
+                    lead={lead}
+                    html={
+                      variant === 0
+                        ? lead.site.html
+                        : (lead.site.variants?.[variant - 1]?.html ?? lead.site.html)
+                    }
+                    template={lead.site.template}
+                  />
+                </div>
               </div>
             </div>
           )}
@@ -516,18 +736,19 @@ function LeadDetail() {
                     </Button>
                     <Button
                       variant="gold"
+                      disabled={!whatsappNumber}
+                      title={
+                        whatsappNumber ? "Abre a conversa já com o texto" : "Lead sem telefone"
+                      }
                       onClick={() => {
-                        void moveLead(lead.id, "Contatado");
-                        const base = whatsappNumber
-                          ? `https://wa.me/${whatsappNumber.length > 11 ? whatsappNumber : `55${whatsappNumber}`}`
-                          : "https://wa.me/";
-                        window.open(
-                          `${base}?text=${encodeURIComponent(lead.message!.text)}`,
-                          "_blank",
+                        // One click: opens the chat with the text typed, marks
+                        // the lead as contacted and schedules the next touch.
+                        void sendWhatsApp(lead.id).catch((err: unknown) =>
+                          toast.error(err instanceof Error ? err.message : "Falha ao abrir."),
                         );
                       }}
                     >
-                      Abrir WhatsApp <ExternalLink className="h-4 w-4" />
+                      Enviar no WhatsApp <ExternalLink className="h-4 w-4" />
                     </Button>
                   </div>
                 </>

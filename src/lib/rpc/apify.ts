@@ -181,17 +181,28 @@ export type PlaceImagesInput = {
   location?: string | undefined;
 };
 
+export type PlaceImagesResult = {
+  images: string[];
+  /**
+   * Why no real photo came back, when that happened. Site generation still
+   * succeeds with the curated fallbacks, but the UI has to say so instead of
+   * passing a stock page off as the business's own.
+   */
+  error?: string | undefined;
+};
+
 /**
- * Fetches the photos of a single business. Leads round-trip through the
- * database, which does not keep the scraped image list, so site generation
- * re-reads them here right before rendering. Never throws: a site without real
- * photos still renders with the curated fallbacks.
+ * Fetches the photos of a single business. Used as a repair path for leads
+ * saved before photos were persisted, and for places whose scrape returned
+ * none. Never throws — it reports the failure in `error` instead, so a site
+ * without real photos still renders with the curated fallbacks.
  */
 export const fetchPlaceImages = createServerFn({ method: "POST" })
   .validator((d: PlaceImagesInput) => d)
-  .handler(async ({ data }): Promise<string[]> => {
+  .handler(async ({ data }): Promise<PlaceImagesResult> => {
     const { apiKey, placeId, query, location } = data;
-    if (!apiKey || (!placeId && !query)) return [];
+    if (!apiKey) return { images: [], error: "Chave da Apify não configurada." };
+    if (!placeId && !query) return { images: [], error: "Lead sem identificação no Google Maps." };
 
     const body: Record<string, unknown> = {
       maxCrawledPlacesPerSearch: 1,
@@ -216,10 +227,25 @@ export const fetchPlaceImages = createServerFn({ method: "POST" })
           body: JSON.stringify(body),
         },
       );
-      if (!res.ok) return [];
+      if (!res.ok) {
+        const body = await res.text();
+        return {
+          images: [],
+          error:
+            res.status === 401 || res.status === 403
+              ? "Chave da Apify inválida ou sem permissão."
+              : `Apify falhou ao buscar as fotos (${res.status}): ${body.slice(0, 160)}`,
+        };
+      }
       const places = (await res.json()) as ApifyPlace[];
-      return places[0] ? pickImages(places[0], 12) : [];
-    } catch {
-      return [];
+      const images = places[0] ? pickImages(places[0], 12) : [];
+      return images.length > 0
+        ? { images }
+        : { images: [], error: "O Google Maps não tem fotos deste negócio." };
+    } catch (err) {
+      return {
+        images: [],
+        error: `Não foi possível buscar as fotos: ${err instanceof Error ? err.message : "erro de rede"}`,
+      };
     }
   });

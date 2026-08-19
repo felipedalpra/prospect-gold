@@ -3,8 +3,11 @@ import { createFileRoute, Link } from "@tanstack/react-router";
 import { motion } from "motion/react";
 import { toast } from "sonner";
 import { useStore } from "@/lib/store";
+import { downloadSiteHtml } from "@/lib/download";
+import { hasSite } from "@/lib/buckets";
 import { Button } from "@/components/ui/button";
-import { ExternalLink, Rocket } from "lucide-react";
+import { cn } from "@/lib/utils";
+import { Download, ExternalLink, Eye, Rocket } from "lucide-react";
 
 export const Route = createFileRoute("/app/sites")({
   head: () => ({
@@ -24,7 +27,15 @@ export const Route = createFileRoute("/app/sites")({
 function Sites() {
   const { state, publishSite, keyFor } = useStore();
   const [publishingId, setPublishingId] = useState<string | null>(null);
-  const sites = state.leads.filter((l) => l.site);
+  const [tab, setTab] = useState<"draft" | "live">("draft");
+
+  // Sites is the library of everything the AI has built — a site does not stop
+  // existing once the lead is approached. The tabs split it by what still needs
+  // an action (publish) from what is already out in the world.
+  const all = state.leads.filter(hasSite);
+  const drafts = all.filter((l) => !l.site!.published);
+  const live = all.filter((l) => l.site!.published);
+  const sites = tab === "draft" ? drafts : live;
 
   async function publish(id: string) {
     if (!keyFor("netlify")) {
@@ -46,8 +57,30 @@ function Sites() {
     <div className="space-y-6">
       <header>
         <p className="text-xs uppercase tracking-widest text-primary">Sites</p>
-        <h1 className="mt-1 text-3xl font-bold">{sites.length} sites gerados</h1>
+        <h1 className="mt-1 text-3xl font-bold">{all.length} sites gerados</h1>
       </header>
+
+      <div className="flex gap-1.5">
+        {(
+          [
+            ["draft", `Rascunhos (${drafts.length})`],
+            ["live", `Publicados (${live.length})`],
+          ] as const
+        ).map(([key, label]) => (
+          <button
+            key={key}
+            onClick={() => setTab(key)}
+            className={cn(
+              "rounded-full border px-3.5 py-1.5 text-xs transition-colors",
+              tab === key
+                ? "border-primary/50 bg-primary/12 text-primary"
+                : "border-border bg-surface-2 text-muted-foreground hover:text-foreground",
+            )}
+          >
+            {label}
+          </button>
+        ))}
+      </div>
 
       <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-3">
         {sites.map((l, i) => {
@@ -84,11 +117,30 @@ function Sites() {
                 <p className="mt-1 truncate text-[11px] text-muted-foreground">
                   {site.url ?? "não publicado"} · {site.template}
                 </p>
+                {l.visits && l.visits.views > 0 && (
+                  <p className="mt-2 inline-flex items-center gap-1.5 rounded-full bg-success/12 px-2 py-0.5 text-[11px] text-success">
+                    <Eye className="h-3 w-3" />
+                    {l.visits.views} visita(s)
+                    {l.visits.whatsappClicks > 0 &&
+                      ` · ${l.visits.whatsappClicks} clique(s) no WhatsApp`}
+                  </p>
+                )}
                 <div className="mt-3 flex gap-2">
                   <Button size="sm" variant="goldline" asChild className="flex-1">
                     <Link to="/app/leads/$id" params={{ id: l.id }}>
                       Abrir editor
                     </Link>
+                  </Button>
+                  <Button
+                    size="sm"
+                    variant="ghost"
+                    title="Baixar o HTML para editar no VS Code"
+                    onClick={() => {
+                      downloadSiteHtml(l);
+                      toast.success(`${site.slug}.html baixado`);
+                    }}
+                  >
+                    <Download className="h-3.5 w-3.5" />
                   </Button>
                   {site.published && site.url ? (
                     <Button size="sm" variant="ghost" asChild title="Abrir site">
@@ -118,11 +170,19 @@ function Sites() {
         })}
         {sites.length === 0 && (
           <p className="text-sm text-muted-foreground">
-            Nenhum site gerado ainda. Vá em{" "}
-            <Link to="/app/prospectar" className="text-primary hover:underline">
-              Prospectar
-            </Link>{" "}
-            para começar.
+            {all.length === 0 ? (
+              <>
+                Nenhum site gerado ainda. Vá em{" "}
+                <Link to="/app/prospectar" className="text-primary hover:underline">
+                  Prospectar
+                </Link>{" "}
+                para começar.
+              </>
+            ) : tab === "draft" ? (
+              "Nenhum rascunho — todos os sites já estão publicados."
+            ) : (
+              "Nenhum site publicado ainda. Publique um rascunho para gerar o link."
+            )}
           </p>
         )}
       </div>

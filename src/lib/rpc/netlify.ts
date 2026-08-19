@@ -10,6 +10,12 @@ export type PublishInput = {
   html: string;
   /** Reuse an existing Netlify site when republishing. */
   siteId?: string | undefined;
+  /**
+   * Custom domain to attach, e.g. "clinica.suaagencia.com.br". A demo on a
+   * netlify.app subdomain reads as disposable; on a real domain it reads as a
+   * site. The DNS record still has to point at Netlify.
+   */
+  domain?: string | undefined;
 };
 
 export type PublishResult = { url: string; siteId: string; deployId: string };
@@ -61,6 +67,20 @@ export const publishSite = createServerFn({ method: "POST" })
     if (!html) throw new Error("Este lead ainda não tem um site gerado.");
 
     const siteId = data.siteId ?? (await createSite(apiKey, slug)).id;
+
+    if (data.domain?.trim()) {
+      // Netlify rejects a domain already claimed elsewhere; that must not cost
+      // the user the deploy, so the failure is reported and publishing goes on.
+      try {
+        await netlify(apiKey, `/sites/${siteId}`, {
+          method: "PATCH",
+          headers: { "content-type": "application/json" },
+          body: JSON.stringify({ custom_domain: data.domain.trim() }),
+        });
+      } catch {
+        // Reported through the returned URL staying on the netlify.app host.
+      }
+    }
 
     // Netlify's digest deploy: declare the files by SHA1, upload only what it
     // asks for, then wait for the deploy to go live.

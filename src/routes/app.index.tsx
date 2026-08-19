@@ -1,6 +1,7 @@
 import { createFileRoute, Link } from "@tanstack/react-router";
 import { motion } from "motion/react";
 import { useStore } from "@/lib/store";
+import { isProspect } from "@/lib/buckets";
 import { Counter } from "@/components/shared/Counter";
 import { ScoreBadge } from "@/components/shared/ScoreBadge";
 import { Button } from "@/components/ui/button";
@@ -24,13 +25,14 @@ function DashboardHome() {
 
   const count = (fn: (l: (typeof leads)[number]) => boolean) => leads.filter(fn).length;
   const sites = count((l) => !!l.site);
+  const toWork = count(isProspect);
   const contacted = count((l) => ["Contatado", "Respondeu", "Reunião", "Proposta", "Venda"].includes(l.stage));
   const replied = count((l) => ["Respondeu", "Reunião", "Proposta", "Venda"].includes(l.stage));
   const meetings = count((l) => ["Reunião", "Proposta", "Venda"].includes(l.stage));
   const sales = count((l) => l.stage === "Venda");
 
   const kpis = [
-    { label: "Leads encontrados", value: leads.length, icon: Users },
+    { label: "Leads a trabalhar", value: toWork, icon: Users },
     { label: "Sites gerados", value: sites, icon: Globe },
     { label: "Contatados", value: contacted, icon: MessageSquare },
     { label: "Respostas", value: replied, icon: ArrowRight },
@@ -48,7 +50,12 @@ function DashboardHome() {
   ];
   const max = Math.max(1, ...funnel.map((f) => f.value));
 
-  const best = [...leads].sort((a, b) => b.score - a.score).slice(0, 5);
+  // Only leads still to work — a lead that already has a site, or that was won
+  // or lost, is not an "opportunity" waiting for you.
+  const best = leads
+    .filter(isProspect)
+    .sort((a, b) => b.score - a.score)
+    .slice(0, 5);
   const activities = leads
     .flatMap((l) => l.activities.slice(0, 2).map((a) => ({ ...a, lead: l.name, id: l.id })))
     .sort((a, b) => b.at.localeCompare(a.at))
