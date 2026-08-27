@@ -60,11 +60,18 @@ export function LeadsTable({
             >
               {selectable && (
                 <td className="px-4 py-3">
-                  <Checkbox checked={selected!.includes(lead.id)} onCheckedChange={() => onToggle!(lead.id)} />
+                  <Checkbox
+                    checked={selected!.includes(lead.id)}
+                    onCheckedChange={() => onToggle!(lead.id)}
+                  />
                 </td>
               )}
               <td className="px-4 py-3">
-                <Link to="/app/leads/$id" params={{ id: lead.id }} className="font-medium hover:text-primary">
+                <Link
+                  to="/app/leads/$id"
+                  params={{ id: lead.id }}
+                  className="font-medium hover:text-primary"
+                >
                   {lead.name}
                 </Link>
               </td>
@@ -83,17 +90,24 @@ export function LeadsTable({
                     <Globe className="h-3 w-3" /> Possui
                   </span>
                 ) : (
-                  <span className="rounded-full bg-primary/12 px-2 py-0.5 text-xs text-primary">Sem site</span>
+                  <span className="rounded-full bg-primary/12 px-2 py-0.5 text-xs text-primary">
+                    Sem site
+                  </span>
                 )}
               </td>
               <td className="px-4 py-3 text-xs text-muted-foreground">
                 {lead.phone ? (
-                  <span className="inline-flex items-center gap-1"><Phone className="h-3 w-3 text-primary" />Disponível</span>
+                  <span className="inline-flex items-center gap-1">
+                    <Phone className="h-3 w-3 text-primary" />
+                    Disponível
+                  </span>
                 ) : (
                   "—"
                 )}
               </td>
-              <td className="px-4 py-3"><ScoreBadge score={lead.score} reasons={lead.reasons} compact /></td>
+              <td className="px-4 py-3">
+                <ScoreBadge score={lead.score} reasons={lead.reasons} compact />
+              </td>
               <td className="px-4 py-3">
                 <span className="rounded-full border border-border bg-surface-2 px-2 py-0.5 text-xs text-muted-foreground">
                   {lead.stage}
@@ -102,7 +116,9 @@ export function LeadsTable({
               <td className="px-4 py-3">
                 {lead.site ? (
                   <Button size="sm" variant="goldline" asChild>
-                    <Link to="/app/leads/$id" params={{ id: lead.id }}>Ver site</Link>
+                    <Link to="/app/leads/$id" params={{ id: lead.id }}>
+                      Ver site
+                    </Link>
                   </Button>
                 ) : (
                   <Button size="sm" variant="gold" onClick={() => onGenerate?.(lead.id)}>
@@ -115,7 +131,9 @@ export function LeadsTable({
         </tbody>
       </table>
       {leads.length === 0 && (
-        <p className="px-4 py-10 text-center text-sm text-muted-foreground">Nenhum lead por aqui ainda.</p>
+        <p className="px-4 py-10 text-center text-sm text-muted-foreground">
+          Nenhum lead por aqui ainda.
+        </p>
       )}
     </div>
   );

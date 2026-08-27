@@ -5,7 +5,11 @@ import { Button } from "@/components/ui/button";
 
 export function Nav() {
   const { scrollY } = useScroll();
-  const bg = useTransform(scrollY, [0, 120], ["oklch(0.13 0.006 80 / 0)", "oklch(0.13 0.006 80 / 0.82)"]);
+  const bg = useTransform(
+    scrollY,
+    [0, 120],
+    ["oklch(0.13 0.006 80 / 0)", "oklch(0.13 0.006 80 / 0.82)"],
+  );
   const border = useTransform(scrollY, [0, 120], ["oklch(1 0 0 / 0)", "oklch(0.28 0.01 82 / 1)"]);
 
   return (
@@ -18,9 +22,15 @@ export function Nav() {
           <Logo />
         </Link>
         <div className="hidden items-center gap-8 text-sm text-muted-foreground md:flex">
-          <a href="#problema" className="transition-colors hover:text-primary">Problema</a>
-          <a href="#como-funciona" className="transition-colors hover:text-primary">Como funciona</a>
-          <a href="#uma-busca" className="transition-colors hover:text-primary">Uma busca</a>
+          <a href="#problema" className="transition-colors hover:text-primary">
+            Problema
+          </a>
+          <a href="#como-funciona" className="transition-colors hover:text-primary">
+            Como funciona
+          </a>
+          <a href="#uma-busca" className="transition-colors hover:text-primary">
+            Uma busca
+          </a>
         </div>
         <div className="flex items-center gap-2">
           <Button variant="ghost" size="sm" asChild>

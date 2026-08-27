@@ -95,7 +95,10 @@ export function Transformation() {
               {i < FLOW.length - 1 && (
                 <motion.svg width="44" height="8" viewBox="0 0 44 8" className="hidden md:block">
                   <motion.line
-                    x1="0" y1="4" x2="44" y2="4"
+                    x1="0"
+                    y1="4"
+                    x2="44"
+                    y2="4"
                     className="stroke-primary/60"
                     strokeWidth="1.5"
                     strokeDasharray="5 5"
@@ -115,8 +118,16 @@ export function Transformation() {
 }
 
 function StepShell({
-  index, title, desc, children,
-}: { index: number; title: string; desc: string; children: React.ReactNode }) {
+  index,
+  title,
+  desc,
+  children,
+}: {
+  index: number;
+  title: string;
+  desc: string;
+  children: React.ReactNode;
+}) {
   return (
     <div className="grid items-center gap-10 py-20 lg:grid-cols-2">
       <motion.div {...rise}>
@@ -147,29 +158,42 @@ export function HowItWorks() {
           Como funciona
         </motion.p>
 
-        <StepShell index={1} title="Encontre oportunidades" desc="Escolha segmento, localização e filtros. Os resultados aparecem em tempo real.">
+        <StepShell
+          index={1}
+          title="Encontre oportunidades"
+          desc="Escolha segmento, localização e filtros. Os resultados aparecem em tempo real."
+        >
           <div className="rounded-2xl glass p-5">
             <div className="grid gap-2 text-sm">
-              {["Dentistas", "Porto Alegre", "Sem site", "Nota acima de 4", "20+ avaliações"].map((f, i) => (
-                <motion.div
-                  key={f}
-                  initial={{ opacity: 0, x: -14 }}
-                  whileInView={{ opacity: 1, x: 0 }}
-                  viewport={{ once: true }}
-                  transition={{ delay: i * 0.12 }}
-                  className="flex items-center gap-2 rounded-lg border border-border bg-surface-2 px-3 py-2"
-                >
-                  <Check className="h-3.5 w-3.5 text-primary" /> {f}
-                </motion.div>
-              ))}
+              {["Dentistas", "Porto Alegre", "Sem site", "Nota acima de 4", "20+ avaliações"].map(
+                (f, i) => (
+                  <motion.div
+                    key={f}
+                    initial={{ opacity: 0, x: -14 }}
+                    whileInView={{ opacity: 1, x: 0 }}
+                    viewport={{ once: true }}
+                    transition={{ delay: i * 0.12 }}
+                    className="flex items-center gap-2 rounded-lg border border-border bg-surface-2 px-3 py-2"
+                  >
+                    <Check className="h-3.5 w-3.5 text-primary" /> {f}
+                  </motion.div>
+                ),
+              )}
             </div>
             <p className="mt-4 font-display text-3xl font-bold text-primary">
-              <Counter to={47} /> <span className="text-sm font-normal text-muted-foreground">empresas qualificadas</span>
+              <Counter to={47} />{" "}
+              <span className="text-sm font-normal text-muted-foreground">
+                empresas qualificadas
+              </span>
             </p>
           </div>
         </StepShell>
 
-        <StepShell index={2} title="Descubra quem realmente vale abordar" desc="Cada empresa recebe um Opportunity Score com o porquê da nota.">
+        <StepShell
+          index={2}
+          title="Descubra quem realmente vale abordar"
+          desc="Cada empresa recebe um Opportunity Score com o porquê da nota."
+        >
           <div className="flex flex-wrap items-center gap-8 rounded-2xl glass p-6">
             <div className="text-center">
               <ScoreRing score={92} size={120} />
@@ -177,7 +201,14 @@ export function HowItWorks() {
               <p className="text-xs text-muted-foreground">Clínica Sorriso</p>
             </div>
             <ul className="flex-1 space-y-2 text-sm">
-              {[["Sem site", 30], ["4.8 estrelas", 15], ["132 avaliações", 15], ["Telefone disponível", 10], ["Instagram ativo", 10], ["Segmento relevante", 10]].map(([l, p], i) => (
+              {[
+                ["Sem site", 30],
+                ["4.8 estrelas", 15],
+                ["132 avaliações", 15],
+                ["Telefone disponível", 10],
+                ["Instagram ativo", 10],
+                ["Segmento relevante", 10],
+              ].map(([l, p], i) => (
                 <motion.li
                   key={l as string}
                   initial={{ opacity: 0, x: 16 }}
@@ -194,7 +225,11 @@ export function HowItWorks() {
           </div>
         </StepShell>
 
-        <StepShell index={3} title="Gere um site em segundos" desc="A IA monta uma landing page personalizada com base nos dados reais do negócio.">
+        <StepShell
+          index={3}
+          title="Gere um site em segundos"
+          desc="A IA monta uma landing page personalizada com base nos dados reais do negócio."
+        >
           <div className="rounded-2xl glass p-5">
             <div className="flex items-center justify-between text-xs text-muted-foreground">
               <span className="rounded-lg bg-surface-2 px-3 py-1.5">Clínica Sorriso</span>
@@ -205,7 +240,9 @@ export function HowItWorks() {
               >
                 Generating...
               </motion.span>
-              <span className="rounded-lg bg-primary/12 px-3 py-1.5 text-primary">Site completo</span>
+              <span className="rounded-lg bg-primary/12 px-3 py-1.5 text-primary">
+                Site completo
+              </span>
             </div>
             <div className="mt-5 space-y-2">
               {["Hero", "Serviços", "Sobre", "Avaliações", "Localização", "CTA"].map((s, i) => (
@@ -224,11 +261,20 @@ export function HowItWorks() {
           </div>
         </StepShell>
 
-        <StepShell index={4} title="Sua abordagem já está pronta" desc="Mensagem personalizada com os dados da empresa, pronta para enviar no WhatsApp.">
+        <StepShell
+          index={4}
+          title="Sua abordagem já está pronta"
+          desc="Mensagem personalizada com os dados da empresa, pronta para enviar no WhatsApp."
+        >
           <div className="mx-auto max-w-md rounded-2xl glass p-5">
             <div className="mb-3 flex items-center gap-2 border-b border-border pb-3">
-              <span className="grid h-8 w-8 place-items-center rounded-full bg-primary/15 text-xs text-primary">CS</span>
-              <div><p className="text-sm">Clínica Sorriso</p><p className="text-[11px] text-primary">online</p></div>
+              <span className="grid h-8 w-8 place-items-center rounded-full bg-primary/15 text-xs text-primary">
+                CS
+              </span>
+              <div>
+                <p className="text-sm">Clínica Sorriso</p>
+                <p className="text-[11px] text-primary">online</p>
+              </div>
             </div>
             <motion.p
               initial={{ opacity: 0 }}
@@ -240,29 +286,39 @@ export function HowItWorks() {
               {`Oi! Tudo bem?\n\nEncontrei a Clínica Sorriso pesquisando clínicas em Porto Alegre e vi que vocês possuem nota 4,8 e mais de 130 avaliações no Google.\n\nPercebi que vocês ainda não possuem um site próprio e acabei criando uma ideia de como poderia ficar:\n\n[visualizar demonstração]\n\nSe fizer sentido, posso te explicar como funciona.`}
             </motion.p>
             <div className="mt-4 flex gap-2">
-              <Button size="sm" variant="goldline" className="flex-1"><Copy className="h-3.5 w-3.5" /> Copiar mensagem</Button>
-              <Button size="sm" variant="gold" className="flex-1"><MessageCircle className="h-3.5 w-3.5" /> Abrir WhatsApp</Button>
+              <Button size="sm" variant="goldline" className="flex-1">
+                <Copy className="h-3.5 w-3.5" /> Copiar mensagem
+              </Button>
+              <Button size="sm" variant="gold" className="flex-1">
+                <MessageCircle className="h-3.5 w-3.5" /> Abrir WhatsApp
+              </Button>
             </div>
           </div>
         </StepShell>
 
-        <StepShell index={5} title="Acompanhe tudo em um único lugar" desc="Um CRM Kanban feito para prospecção: do primeiro contato à venda.">
+        <StepShell
+          index={5}
+          title="Acompanhe tudo em um único lugar"
+          desc="Um CRM Kanban feito para prospecção: do primeiro contato à venda."
+        >
           <div className="flex gap-2 overflow-hidden rounded-2xl glass p-4">
-            {["Novo", "Site criado", "Contatado", "Respondeu", "Reunião", "Proposta", "Venda"].map((c, i) => (
-              <motion.div
-                key={c}
-                initial={{ opacity: 0, y: 24 }}
-                whileInView={{ opacity: 1, y: [24, -6, 0] }}
-                viewport={{ once: true }}
-                transition={{ delay: i * 0.1, duration: 0.7 }}
-                className="w-24 shrink-0 rounded-lg border border-border bg-surface-2 p-2"
-              >
-                <p className="mb-2 text-[10px] text-muted-foreground">{c}</p>
-                {Array.from({ length: Math.max(1, 4 - i) }).map((_, j) => (
-                  <div key={j} className="mb-1.5 h-6 rounded bg-primary/10" />
-                ))}
-              </motion.div>
-            ))}
+            {["Novo", "Site criado", "Contatado", "Respondeu", "Reunião", "Proposta", "Venda"].map(
+              (c, i) => (
+                <motion.div
+                  key={c}
+                  initial={{ opacity: 0, y: 24 }}
+                  whileInView={{ opacity: 1, y: [24, -6, 0] }}
+                  viewport={{ once: true }}
+                  transition={{ delay: i * 0.1, duration: 0.7 }}
+                  className="w-24 shrink-0 rounded-lg border border-border bg-surface-2 p-2"
+                >
+                  <p className="mb-2 text-[10px] text-muted-foreground">{c}</p>
+                  {Array.from({ length: Math.max(1, 4 - i) }).map((_, j) => (
+                    <div key={j} className="mb-1.5 h-6 rounded bg-primary/10" />
+                  ))}
+                </motion.div>
+              ),
+            )}
           </div>
         </StepShell>
       </div>
@@ -286,7 +342,10 @@ export function OneSearch() {
       <div className="pointer-events-none absolute inset-0 grid-bg opacity-25 [mask-image:radial-gradient(ellipse_at_center,black,transparent_70%)]" />
       <div className="pointer-events-none absolute left-1/2 top-0 h-[600px] w-[600px] -translate-x-1/2 animate-pulse-glow rounded-full bg-primary/10 blur-[160px]" />
       <div className="relative mx-auto max-w-3xl px-5 text-center">
-        <motion.div {...rise} className="mx-auto w-full max-w-md rounded-xl glass-gold px-5 py-4 text-left font-mono text-sm">
+        <motion.div
+          {...rise}
+          className="mx-auto w-full max-w-md rounded-xl glass-gold px-5 py-4 text-left font-mono text-sm"
+        >
           <span className="mr-2 text-primary">›</span>Academias em Florianópolis
         </motion.div>
 
@@ -328,7 +387,9 @@ export function FinalCta() {
         </motion.h2>
         <motion.div {...rise} className="mt-10 flex flex-wrap justify-center gap-3">
           <Button variant="gold" size="xl" asChild>
-            <Link to="/auth">Encontrar oportunidades <ArrowRight className="h-4 w-4" /></Link>
+            <Link to="/auth">
+              Encontrar oportunidades <ArrowRight className="h-4 w-4" />
+            </Link>
           </Button>
           <Button variant="goldline" size="xl" asChild>
             <Link to="/app">Ver o dashboard</Link>

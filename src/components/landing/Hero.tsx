@@ -60,7 +60,9 @@ function HeroConsole() {
         <span className="h-2.5 w-2.5 rounded-full bg-destructive/70" />
         <span className="h-2.5 w-2.5 rounded-full bg-warning/70" />
         <span className="h-2.5 w-2.5 rounded-full bg-success/70" />
-        <span className="ml-2 text-[11px] text-muted-foreground">leadforge — prospecção ao vivo</span>
+        <span className="ml-2 text-[11px] text-muted-foreground">
+          leadforge — prospecção ao vivo
+        </span>
       </div>
 
       <div className="rounded-lg border border-primary/25 bg-background/60 px-3 py-2.5 font-mono text-sm text-foreground">
@@ -84,7 +86,9 @@ function HeroConsole() {
             <span className="grid h-6 w-6 shrink-0 place-items-center rounded-md bg-primary/15 text-[10px] font-bold text-primary">
               {i + 1}
             </span>
-            <span className="font-display text-lg font-bold text-primary tabular-nums">{step.value}</span>
+            <span className="font-display text-lg font-bold text-primary tabular-nums">
+              {step.value}
+            </span>
             <span className="text-xs text-muted-foreground">{step.label}</span>
           </motion.div>
         ))}
@@ -133,7 +137,10 @@ export function Hero() {
       <div className="pointer-events-none absolute -left-32 top-1/4 h-96 w-96 animate-pulse-glow rounded-full bg-primary/10 blur-[130px]" />
       <div className="pointer-events-none absolute -right-20 bottom-0 h-96 w-96 animate-pulse-glow rounded-full bg-champagne/10 blur-[140px]" />
 
-      <motion.div style={{ opacity: fade }} className="relative mx-auto grid w-full max-w-7xl gap-14 px-5 pb-24 lg:grid-cols-[1.1fr_0.9fr] lg:items-center">
+      <motion.div
+        style={{ opacity: fade }}
+        className="relative mx-auto grid w-full max-w-7xl gap-14 px-5 pb-24 lg:grid-cols-[1.1fr_0.9fr] lg:items-center"
+      >
         <motion.div style={{ y: yText }}>
           <motion.span
             initial={{ opacity: 0, y: 14 }}

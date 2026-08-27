@@ -50,7 +50,7 @@ function hex(value: string | undefined, fallback: string): string {
  */
 function rotate<T>(list: readonly T[], current: T | undefined, seed: number): T {
   const at = list.indexOf(current as T);
-  return list[(((at < 0 ? 0 : at) + seed) % list.length + list.length) % list.length]!;
+  return list[((((at < 0 ? 0 : at) + seed) % list.length) + list.length) % list.length]!;
 }
 
 /**
@@ -68,15 +68,20 @@ function shiftHue(color: string, degrees: number): string {
   const d = max - min;
   if (d === 0) return color;
   const s = l > 0.5 ? d / (2 - max - min) : d / (max + min);
-  let h =
-    max === r ? (g - b) / d + (g < b ? 6 : 0) : max === g ? (b - r) / d + 2 : (r - g) / d + 4;
-  h = (((h / 6) * 360 + degrees) % 360 + 360) % 360 / 360;
+  let h = max === r ? (g - b) / d + (g < b ? 6 : 0) : max === g ? (b - r) / d + 2 : (r - g) / d + 4;
+  h = (((((h / 6) * 360 + degrees) % 360) + 360) % 360) / 360;
   const q = l < 0.5 ? l * (1 + s) : l + s - l * s;
   const p = 2 * l - q;
   const channel = (t: number): number => {
     const x = (t + 1) % 1;
     const v =
-      x < 1 / 6 ? p + (q - p) * 6 * x : x < 1 / 2 ? q : x < 2 / 3 ? p + (q - p) * (2 / 3 - x) * 6 : p;
+      x < 1 / 6
+        ? p + (q - p) * 6 * x
+        : x < 1 / 2
+          ? q
+          : x < 2 / 3
+            ? p + (q - p) * (2 / 3 - x) * 6
+            : p;
     return Math.round(v * 255);
   };
   return (
@@ -368,9 +373,11 @@ function normalizeBlocks(
           // own seed, because the AI hands every business in a segment the same
           // running order.
           const hero =
-            clean.find((b) => b.kind === "hero") ?? ({ kind: "hero", variant: "split" } as SiteBlock);
+            clean.find((b) => b.kind === "hero") ??
+            ({ kind: "hero", variant: "split" } as SiteBlock);
           const rest = clean.filter((b) => b.kind !== "hero").slice(0, 9);
-          const tail = rest.length > 1 && rest[rest.length - 1]!.kind === "cta" ? rest.pop()! : null;
+          const tail =
+            rest.length > 1 && rest[rest.length - 1]!.kind === "cta" ? rest.pop()! : null;
           const cut = rest.length > 1 ? seed % rest.length : 0;
           const middle = [...rest.slice(cut), ...rest.slice(0, cut)];
           return [hero, ...middle, ...(tail ? [tail] : [])];
@@ -440,8 +447,7 @@ function identityOf(lead: Lead, content: SiteSection, template: string, remix = 
     ),
     // A dark page is a strong choice, so it is kept when the AI asks for one,
     // and otherwise handed to a minority of leads rather than to a whole layout.
-    mode:
-      chosen.mode === "dark" || layout === "immersive" || seed % 5 === 0 ? "dark" : "light",
+    mode: chosen.mode === "dark" || layout === "immersive" || seed % 5 === 0 ? "dark" : "light",
     accent,
     secondary,
     onAccent: readableOn(accent),

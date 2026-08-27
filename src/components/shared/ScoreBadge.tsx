@@ -15,7 +15,13 @@ export function ScoreRing({ score, size = 88 }: { score: number; size?: number }
   return (
     <div className="relative" style={{ width: size, height: size }}>
       <svg width={size} height={size} className="-rotate-90">
-        <circle cx={size / 2} cy={size / 2} r={r} strokeWidth={5} className="fill-none stroke-border" />
+        <circle
+          cx={size / 2}
+          cy={size / 2}
+          r={r}
+          strokeWidth={5}
+          className="fill-none stroke-border"
+        />
         <motion.circle
           cx={size / 2}
           cy={size / 2}
@@ -27,7 +33,9 @@ export function ScoreRing({ score, size = 88 }: { score: number; size?: number }
           whileInView={{ strokeDashoffset: c - (c * score) / 100 }}
           viewport={{ once: true }}
           transition={{ duration: 1.4, ease: [0.16, 1, 0.3, 1] }}
-          style={{ filter: "drop-shadow(0 0 8px color-mix(in oklab, var(--gold) 60%, transparent))" }}
+          style={{
+            filter: "drop-shadow(0 0 8px color-mix(in oklab, var(--gold) 60%, transparent))",
+          }}
         />
       </svg>
       <div className="absolute inset-0 flex flex-col items-center justify-center">
@@ -65,7 +73,11 @@ export function ScoreBadge({
         )}
       >
         <span className="tabular-nums">{score}</span>
-        {!compact && <span className="font-normal opacity-80">{icon} {label}</span>}
+        {!compact && (
+          <span className="font-normal opacity-80">
+            {icon} {label}
+          </span>
+        )}
       </button>
       <AnimatePresence>
         {open && reasons && (
