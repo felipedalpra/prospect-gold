@@ -1,12 +1,19 @@
 import { supabase } from "./supabase";
 import type {
+  Alert,
   Campaign,
+  Enrichment,
+  Enrollment,
   Integration,
   Lead,
   LeadSite,
+  OutreachMessage,
   Profile,
   Provider,
   ScoreReason,
+  Schedule,
+  Sequence,
+  SequenceStep,
   SiteAudit,
   SiteSection,
   SiteVariant,
@@ -41,6 +48,11 @@ type LeadRow = {
   message: Lead["message"] | null;
   activities: { at: string; text: string }[];
   created_at: string;
+  email: string | null;
+  enriched: Enrichment | null;
+  engagement: number;
+  hot_at: string | null;
+  never_contact: boolean;
 };
 
 type SiteRow = {
@@ -101,6 +113,11 @@ function toLead(row: LeadRow, site?: SiteRow | undefined): Lead {
     message: row.message ?? undefined,
     createdAt: row.created_at,
     activities: row.activities ?? [],
+    email: row.email ?? undefined,
+    engagement: row.engagement ?? 0,
+    hotAt: row.hot_at ?? undefined,
+    enriched: row.enriched ?? undefined,
+    neverContact: row.never_contact ?? false,
   };
 }
 
@@ -143,6 +160,11 @@ function leadPatch(patch: Partial<Lead>) {
   // `followUpAt` present but undefined means "clear it".
   if ("followUpAt" in patch) out["follow_up_at"] = patch.followUpAt ?? null;
   if (patch.siteAudit !== undefined) out["site_audit"] = patch.siteAudit ?? null;
+  if (patch.email !== undefined) out["email"] = patch.email ?? null;
+  if (patch.enriched !== undefined) out["enriched"] = patch.enriched ?? {};
+  if (patch.neverContact !== undefined) out["never_contact"] = patch.neverContact;
+  // `engagement` and `hot_at` are owned by the database triggers, never by the
+  // browser — a tab must not be able to talk itself into a hot lead.
   return out;
 }
 
@@ -461,40 +483,79 @@ export async function fetchVisitStats(): Promise<Map<string, VisitStats>> {
 /*  instead of losing it.                                                      */
 /* -------------------------------------------------------------------------- */
 
+export type JobKind =
+  | "site"
+  | "publish"
+  | "message"
+  | "outreach"
+  | "followup"
+  | "prospect"
+  | "audit"
+  | "enrich"
+  | "rescan";
+
 export type JobRow = {
   id: string;
   campaign_id: string | null;
   lead_id: string | null;
-  kind: "site" | "publish" | "message";
+  kind: JobKind;
   status: "pending" | "running" | "done" | "failed";
   error: string | null;
   attempts: number;
   created_at: string;
+  /** When the work becomes due. A cadence step is work scheduled for a date. */
+  due_at: string;
+  payload: Record<string, unknown>;
 };
 
-export async function enqueueJobs(
-  userId: string,
-  jobs: { leadId: string; kind: JobRow["kind"]; campaignId?: string | undefined }[],
-): Promise<void> {
+export type NewJob = {
+  leadId?: string | undefined;
+  kind: JobKind;
+  campaignId?: string | undefined;
+  /** Omit for "as soon as possible". */
+  dueAt?: string | undefined;
+  payload?: Record<string, unknown> | undefined;
+};
+
+export async function enqueueJobs(userId: string, jobs: NewJob[]): Promise<void> {
   if (jobs.length === 0) return;
   const { error } = await supabase.from("jobs").insert(
     jobs.map((j) => ({
       user_id: userId,
-      lead_id: j.leadId,
+      lead_id: j.leadId ?? null,
       campaign_id: j.campaignId ?? null,
       kind: j.kind,
+      due_at: j.dueAt ?? new Date().toISOString(),
+      payload: j.payload ?? {},
     })),
   );
   if (error) throw error;
 }
 
+/**
+ * Only work that is actually due. A follow-up scheduled for Thursday sits in
+ * this table all week without a runner ever picking it up.
+ */
 export async function fetchPendingJobs(): Promise<JobRow[]> {
   const { data, error } = await supabase
     .from("jobs")
     .select("*")
     .in("status", ["pending", "running"])
-    .order("created_at", { ascending: true })
+    .lte("due_at", new Date().toISOString())
+    .order("due_at", { ascending: true })
     .limit(200);
+  if (error) return [];
+  return (data as JobRow[] | null) ?? [];
+}
+
+/** Everything queued, due or not — the "o que está agendado" view. */
+export async function fetchAllJobs(): Promise<JobRow[]> {
+  const { data, error } = await supabase
+    .from("jobs")
+    .select("*")
+    .in("status", ["pending", "running"])
+    .order("due_at", { ascending: true })
+    .limit(500);
   if (error) return [];
   return (data as JobRow[] | null) ?? [];
 }
@@ -513,4 +574,399 @@ export async function markJob(
 /** Drops finished work so the queue view stays about what is left to do. */
 export async function clearFinishedJobs(): Promise<void> {
   await supabase.from("jobs").delete().in("status", ["done", "failed"]);
+}
+
+/* -------------------------------------------------------------------------- */
+/*  Sequences — the cadence templates                                          */
+/* -------------------------------------------------------------------------- */
+
+type SequenceRow = {
+  id: string;
+  name: string;
+  steps: SequenceStep[];
+  active: boolean;
+  created_at: string;
+};
+
+function toSequence(r: SequenceRow): Sequence {
+  return {
+    id: r.id,
+    name: r.name,
+    steps: r.steps ?? [],
+    active: r.active,
+    createdAt: r.created_at,
+  };
+}
+
+export async function fetchSequences(): Promise<Sequence[]> {
+  const { data, error } = await supabase
+    .from("sequences")
+    .select("*")
+    .order("created_at", { ascending: true });
+  if (error) return [];
+  return ((data as SequenceRow[] | null) ?? []).map(toSequence);
+}
+
+export async function createSequence(
+  userId: string,
+  s: { name: string; steps: SequenceStep[] },
+): Promise<Sequence> {
+  const { data, error } = await supabase
+    .from("sequences")
+    .insert({ user_id: userId, name: s.name, steps: s.steps })
+    .select("*")
+    .single();
+  if (error) throw error;
+  return toSequence(data as SequenceRow);
+}
+
+export async function patchSequence(id: string, patch: Partial<Sequence>): Promise<void> {
+  const out: Record<string, unknown> = {};
+  if (patch.name !== undefined) out["name"] = patch.name;
+  if (patch.steps !== undefined) out["steps"] = patch.steps;
+  if (patch.active !== undefined) out["active"] = patch.active;
+  if (Object.keys(out).length === 0) return;
+  const { error } = await supabase.from("sequences").update(out).eq("id", id);
+  if (error) throw error;
+}
+
+export async function deleteSequence(id: string): Promise<void> {
+  const { error } = await supabase.from("sequences").delete().eq("id", id);
+  if (error) throw error;
+}
+
+/* -------------------------------------------------------------------------- */
+/*  Enrollments — a lead walking through a cadence                             */
+/* -------------------------------------------------------------------------- */
+
+type EnrollmentRow = {
+  id: string;
+  lead_id: string;
+  sequence_id: string;
+  step: number;
+  status: Enrollment["status"];
+  next_at: string;
+  stopped_reason: string | null;
+};
+
+function toEnrollment(r: EnrollmentRow): Enrollment {
+  return {
+    id: r.id,
+    leadId: r.lead_id,
+    sequenceId: r.sequence_id,
+    step: r.step,
+    status: r.status,
+    nextAt: r.next_at,
+    stoppedReason: r.stopped_reason ?? undefined,
+  };
+}
+
+export async function fetchEnrollments(): Promise<Map<string, Enrollment>> {
+  const { data, error } = await supabase.from("enrollments").select("*");
+  if (error) return new Map();
+  return new Map(
+    ((data as EnrollmentRow[] | null) ?? []).map((r) => [r.lead_id, toEnrollment(r)] as const),
+  );
+}
+
+/**
+ * Puts a lead into a cadence. Re-enrolling a lead that already finished one
+ * restarts it from the top rather than erroring — the seller asked for another
+ * run at this business, and the unique index on lead_id makes that an upsert.
+ */
+export async function enroll(
+  userId: string,
+  leadId: string,
+  sequenceId: string,
+): Promise<Enrollment> {
+  const { data, error } = await supabase
+    .from("enrollments")
+    .upsert(
+      {
+        user_id: userId,
+        lead_id: leadId,
+        sequence_id: sequenceId,
+        step: 0,
+        status: "active",
+        next_at: new Date().toISOString(),
+        stopped_reason: null,
+        updated_at: new Date().toISOString(),
+      },
+      { onConflict: "lead_id" },
+    )
+    .select("*")
+    .single();
+  if (error) throw error;
+  return toEnrollment(data as EnrollmentRow);
+}
+
+export async function stopEnrollment(leadId: string, reason: string): Promise<void> {
+  await supabase
+    .from("enrollments")
+    .update({ status: "stopped", stopped_reason: reason, updated_at: new Date().toISOString() })
+    .eq("lead_id", leadId)
+    .eq("status", "active");
+}
+
+/** Banks the step just sent and schedules the next one. Postgres owns the maths. */
+export async function advanceEnrollment(leadId: string): Promise<void> {
+  const { error } = await supabase.rpc("advance_enrollment", { p_lead: leadId });
+  if (error) throw error;
+}
+
+/** Enrolled leads whose next touch has come due. */
+export async function fetchDueEnrollments(): Promise<Enrollment[]> {
+  const { data, error } = await supabase
+    .from("enrollments")
+    .select("*")
+    .eq("status", "active")
+    .lte("next_at", new Date().toISOString())
+    .order("next_at", { ascending: true })
+    .limit(100);
+  if (error) return [];
+  return ((data as EnrollmentRow[] | null) ?? []).map(toEnrollment);
+}
+
+/* -------------------------------------------------------------------------- */
+/*  Schedules — prospecting that repeats without the user                      */
+/* -------------------------------------------------------------------------- */
+
+type ScheduleRow = {
+  id: string;
+  name: string;
+  niche: string;
+  location: string;
+  filters: Record<string, unknown>;
+  frequency: Schedule["frequency"];
+  weekday: number;
+  hour: number;
+  lead_limit: number;
+  min_score: number;
+  auto_site: boolean;
+  auto_publish: boolean;
+  auto_message: boolean;
+  sequence_id: string | null;
+  active: boolean;
+  last_run_at: string | null;
+  next_run_at: string;
+};
+
+function toSchedule(r: ScheduleRow): Schedule {
+  return {
+    id: r.id,
+    name: r.name,
+    niche: r.niche,
+    location: r.location,
+    filters: r.filters ?? {},
+    frequency: r.frequency,
+    weekday: r.weekday,
+    hour: r.hour,
+    leadLimit: r.lead_limit,
+    minScore: r.min_score,
+    autoSite: r.auto_site,
+    autoPublish: r.auto_publish,
+    autoMessage: r.auto_message,
+    sequenceId: r.sequence_id ?? undefined,
+    active: r.active,
+    lastRunAt: r.last_run_at ?? undefined,
+    nextRunAt: r.next_run_at,
+  };
+}
+
+function scheduleWrite(s: Partial<Schedule>): Record<string, unknown> {
+  const out: Record<string, unknown> = {};
+  if (s.name !== undefined) out["name"] = s.name;
+  if (s.niche !== undefined) out["niche"] = s.niche;
+  if (s.location !== undefined) out["location"] = s.location;
+  if (s.filters !== undefined) out["filters"] = s.filters;
+  if (s.frequency !== undefined) out["frequency"] = s.frequency;
+  if (s.weekday !== undefined) out["weekday"] = s.weekday;
+  if (s.hour !== undefined) out["hour"] = s.hour;
+  if (s.leadLimit !== undefined) out["lead_limit"] = s.leadLimit;
+  if (s.minScore !== undefined) out["min_score"] = s.minScore;
+  if (s.autoSite !== undefined) out["auto_site"] = s.autoSite;
+  if (s.autoPublish !== undefined) out["auto_publish"] = s.autoPublish;
+  if (s.autoMessage !== undefined) out["auto_message"] = s.autoMessage;
+  if (s.sequenceId !== undefined) out["sequence_id"] = s.sequenceId ?? null;
+  if (s.active !== undefined) out["active"] = s.active;
+  if (s.nextRunAt !== undefined) out["next_run_at"] = s.nextRunAt;
+  if (s.lastRunAt !== undefined) out["last_run_at"] = s.lastRunAt;
+  return out;
+}
+
+export async function fetchSchedules(): Promise<Schedule[]> {
+  const { data, error } = await supabase
+    .from("schedules")
+    .select("*")
+    .order("next_run_at", { ascending: true });
+  if (error) return [];
+  return ((data as ScheduleRow[] | null) ?? []).map(toSchedule);
+}
+
+export async function createSchedule(
+  userId: string,
+  s: Partial<Schedule> & { nextRunAt: string },
+): Promise<Schedule> {
+  const { data, error } = await supabase
+    .from("schedules")
+    .insert({ user_id: userId, ...scheduleWrite(s) })
+    .select("*")
+    .single();
+  if (error) throw error;
+  return toSchedule(data as ScheduleRow);
+}
+
+export async function patchSchedule(id: string, patch: Partial<Schedule>): Promise<void> {
+  const out = scheduleWrite(patch);
+  if (Object.keys(out).length === 0) return;
+  const { error } = await supabase.from("schedules").update(out).eq("id", id);
+  if (error) throw error;
+}
+
+export async function deleteSchedule(id: string): Promise<void> {
+  const { error } = await supabase.from("schedules").delete().eq("id", id);
+  if (error) throw error;
+}
+
+/* -------------------------------------------------------------------------- */
+/*  Messages — the conversation, in both directions                            */
+/* -------------------------------------------------------------------------- */
+
+type MessageRow = {
+  id: string;
+  lead_id: string;
+  direction: OutreachMessage["direction"];
+  channel: OutreachMessage["channel"];
+  tone: string;
+  variant: string;
+  step: number;
+  body: string;
+  status: OutreachMessage["status"];
+  error: string | null;
+  created_at: string;
+  sent_at: string | null;
+};
+
+function toMessage(r: MessageRow): OutreachMessage {
+  return {
+    id: r.id,
+    leadId: r.lead_id,
+    direction: r.direction,
+    channel: r.channel,
+    tone: r.tone,
+    variant: r.variant,
+    step: r.step,
+    body: r.body,
+    status: r.status,
+    error: r.error ?? undefined,
+    createdAt: r.created_at,
+    sentAt: r.sent_at ?? undefined,
+  };
+}
+
+export async function fetchMessages(limit = 500): Promise<OutreachMessage[]> {
+  const { data, error } = await supabase
+    .from("messages")
+    .select("*")
+    .order("created_at", { ascending: false })
+    .limit(limit);
+  if (error) return [];
+  return ((data as MessageRow[] | null) ?? []).map(toMessage);
+}
+
+export async function logMessage(
+  userId: string,
+  m: {
+    leadId: string;
+    direction?: OutreachMessage["direction"] | undefined;
+    channel?: OutreachMessage["channel"] | undefined;
+    tone?: string | undefined;
+    variant?: string | undefined;
+    step?: number | undefined;
+    body: string;
+    status: OutreachMessage["status"];
+    providerMessageId?: string | undefined;
+    error?: string | undefined;
+  },
+): Promise<OutreachMessage> {
+  const { data, error } = await supabase
+    .from("messages")
+    .insert({
+      user_id: userId,
+      lead_id: m.leadId,
+      direction: m.direction ?? "out",
+      channel: m.channel ?? "whatsapp",
+      tone: m.tone ?? "",
+      variant: m.variant ?? "A",
+      step: m.step ?? 0,
+      body: m.body,
+      status: m.status,
+      provider_message_id: m.providerMessageId ?? null,
+      error: m.error ?? null,
+      sent_at: m.status === "sent" ? new Date().toISOString() : null,
+    })
+    .select("*")
+    .single();
+  if (error) throw error;
+  return toMessage(data as MessageRow);
+}
+
+/* -------------------------------------------------------------------------- */
+/*  Alerts — raised by the database, read by whoever opens the app             */
+/* -------------------------------------------------------------------------- */
+
+type AlertRow = {
+  id: string;
+  lead_id: string | null;
+  kind: Alert["kind"];
+  body: string;
+  read: boolean;
+  created_at: string;
+};
+
+function toAlert(r: AlertRow): Alert {
+  return {
+    id: r.id,
+    leadId: r.lead_id ?? undefined,
+    kind: r.kind,
+    body: r.body,
+    read: r.read,
+    createdAt: r.created_at,
+  };
+}
+
+export async function fetchAlerts(limit = 50): Promise<Alert[]> {
+  const { data, error } = await supabase
+    .from("alerts")
+    .select("*")
+    .order("created_at", { ascending: false })
+    .limit(limit);
+  if (error) return [];
+  return ((data as AlertRow[] | null) ?? []).map(toAlert);
+}
+
+export async function markAlertsRead(ids: string[]): Promise<void> {
+  if (ids.length === 0) return;
+  await supabase.from("alerts").update({ read: true }).in("id", ids);
+}
+
+export async function raiseAlert(
+  userId: string,
+  a: { leadId?: string | undefined; kind: Alert["kind"]; body: string },
+): Promise<void> {
+  await supabase
+    .from("alerts")
+    .insert({ user_id: userId, lead_id: a.leadId ?? null, kind: a.kind, body: a.body });
+}
+
+/**
+ * Pushes a job into the future without failing it. Used when work comes due
+ * outside the sending window: the touch is not lost, it just waits for a
+ * civilised hour.
+ */
+export async function rescheduleJob(id: string, dueAt: string): Promise<void> {
+  await supabase
+    .from("jobs")
+    .update({ status: "pending", due_at: dueAt, updated_at: new Date().toISOString() })
+    .eq("id", id);
 }

@@ -16,7 +16,10 @@ import {
   Settings,
   Zap,
   LogOut,
+  Inbox,
+  Workflow,
 } from "lucide-react";
+import { AlertBell } from "@/components/app/AlertBell";
 
 export const Route = createFileRoute("/app")({
   head: () => ({
@@ -39,7 +42,9 @@ const NAV = [
   { to: "/app/leads", label: "Leads", icon: Users },
   { to: "/app/sites", label: "Sites", icon: Globe },
   { to: "/app/abordagens", label: "Abordagens", icon: MessagesSquare },
+  { to: "/app/conversas", label: "Conversas", icon: Inbox },
   { to: "/app/pipeline", label: "Pipeline", icon: KanbanSquare },
+  { to: "/app/automacoes", label: "Automações", icon: Workflow },
   { to: "/app/campanhas", label: "Campanhas", icon: Megaphone },
   { to: "/app/configuracoes", label: "Configurações", icon: Settings },
 ] as const;
@@ -142,11 +147,11 @@ function AppLayout() {
       </aside>
 
       <div className="flex min-w-0 flex-1 flex-col lg:pl-60">
-        <div className="sticky top-0 z-30 flex items-center gap-3 border-b border-border bg-background/80 px-5 py-3 backdrop-blur-xl lg:hidden">
-          <Link to="/">
+        <div className="sticky top-0 z-30 flex items-center gap-3 border-b border-border bg-background/80 px-5 py-3 backdrop-blur-xl lg:justify-end lg:px-8">
+          <Link to="/" className="lg:hidden">
             <Logo compact />
           </Link>
-          <div className="flex gap-1 overflow-x-auto">
+          <div className="flex gap-1 overflow-x-auto lg:hidden">
             {NAV.map((i) => (
               <Link
                 key={i.to}
@@ -158,6 +163,7 @@ function AppLayout() {
               </Link>
             ))}
           </div>
+          <AlertBell />
         </div>
         {state.queue.length > 0 && (
           <div className="flex flex-wrap items-center gap-3 border-b border-primary/25 bg-primary/8 px-5 py-2.5 text-xs lg:px-8">

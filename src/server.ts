@@ -95,11 +95,103 @@ async function recordVisit(url: URL, request: Request): Promise<Response> {
   return new Response(PIXEL, { headers: BEACON_HEADERS });
 }
 
+/* -------------------------------------------------------------------------- */
+/*  Inbound WhatsApp                                                           */
+/*  The user's own instance posts here when a lead replies. It carries no       */
+/*  session, so the secret in the path is what identifies the account — the     */
+/*  same shape as the beacon above, and for the same reason.                    */
+/* -------------------------------------------------------------------------- */
+
+type InboundHit = { phone: string; body: string };
+
+/**
+ * Every provider invented its own envelope. Rather than ask the user which one
+ * they run — they often don't know — we read all three shapes and take the
+ * first that yields a number and some text.
+ */
+type Bag = Record<string, unknown>;
+
+function bag(v: unknown): Bag {
+  return v !== null && typeof v === "object" ? (v as Bag) : {};
+}
+
+function str(v: unknown): string {
+  return typeof v === "string" ? v : "";
+}
+
+function readInbound(payload: unknown): InboundHit | null {
+  const p = bag(payload);
+
+  // Evolution / Uazapi: a messages.upsert envelope around a Baileys message.
+  const data = bag(p["data"] ?? p);
+  const key = bag(data["key"]);
+  const jid = str(key["remoteJid"]);
+  if (jid) {
+    // Our own outgoing messages echo back through the same hook.
+    if (key["fromMe"] === true) return null;
+    // Groups are not leads.
+    if (jid.includes("@g.us")) return null;
+
+    const msg = bag(data["message"]);
+    const body =
+      str(msg["conversation"]) ||
+      str(bag(msg["extendedTextMessage"])["text"]) ||
+      str(bag(msg["imageMessage"])["caption"]) ||
+      str(data["body"]);
+    if (!body) return null;
+    return { phone: jid.split("@")[0] ?? "", body };
+  }
+
+  // Z-API: a flat payload with the number at the top level.
+  const phone = str(p["phone"]);
+  if (phone && p["fromMe"] !== true) {
+    const body = str(bag(p["text"])["message"]) || str(p["message"]) || str(p["body"]);
+    if (!body) return null;
+    return { phone, body };
+  }
+
+  return null;
+}
+
+async function recordInbound(url: URL, request: Request): Promise<Response> {
+  const token = decodeURIComponent(url.pathname.slice("/api/wa/".length));
+  const base = import.meta.env["VITE_SUPABASE_URL"] as string | undefined;
+  const key = import.meta.env["VITE_SUPABASE_ANON_KEY"] as string | undefined;
+
+  // Providers retry anything that is not a 2xx, so a payload we cannot use —
+  // a status callback, a group message, our own echo — still answers 200.
+  const ok = new Response(JSON.stringify({ ok: true }), {
+    headers: { "content-type": "application/json" },
+  });
+  if (!token || !base || !key) return ok;
+
+  try {
+    const hit = readInbound(await request.json());
+    if (!hit) return ok;
+
+    await fetch(`${base}/rest/v1/rpc/record_inbound_message`, {
+      method: "POST",
+      headers: {
+        "content-type": "application/json",
+        apikey: key,
+        authorization: `Bearer ${key}`,
+      },
+      body: JSON.stringify({ p_token: token, p_phone: hit.phone, p_body: hit.body }),
+    });
+  } catch {
+    // A malformed webhook must never make the provider mark us as broken.
+  }
+  return ok;
+}
+
 export default {
   async fetch(request: Request, env: unknown, ctx: unknown) {
     try {
       const url = new URL(request.url);
       if (url.pathname.startsWith("/t/")) return await recordVisit(url, request);
+      if (url.pathname.startsWith("/api/wa/") && request.method === "POST") {
+        return await recordInbound(url, request);
+      }
       const handler = await getServerEntry();
       const response = await handler.fetch(request, env, ctx);
       return await normalizeCatastrophicSsrResponse(response);

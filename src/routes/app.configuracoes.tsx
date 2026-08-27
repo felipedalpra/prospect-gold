@@ -6,6 +6,7 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Button } from "@/components/ui/button";
 import { ApiKeyCard } from "@/components/app/ApiKeyCard";
+import { WhatsAppCard } from "@/components/app/WhatsAppCard";
 import type { Provider } from "@/lib/types";
 import { KeyRound } from "lucide-react";
 
@@ -68,6 +69,8 @@ function Config() {
             <ApiKeyCard key={p} provider={p} />
           ))}
         </div>
+
+        <WhatsAppCard />
 
         {keyFor("netlify") && (
           <div className="space-y-2 rounded-xl border border-border bg-surface p-4">

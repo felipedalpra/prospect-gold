@@ -184,6 +184,138 @@ export type Lead = {
   siteAudit?: SiteAudit | undefined;
   /** Engagement on the demo page. Filled from site_visits, never persisted. */
   visits?: VisitStats | undefined;
+
+  /* -- Behaviour and enrichment ------------------------------------------- */
+
+  email?: string | undefined;
+  /**
+   * Behavioural score, 0-100, maintained by Postgres from what the business
+   * actually did with the page. The static `score` says how good a prospect
+   * this looks; `engagement` says how warm it has become.
+   */
+  engagement: number;
+  /** Last time the lead touched the demo page. Drives "quem está quente". */
+  hotAt?: string | undefined;
+  /** Registry, socials and decision-maker data resolved after scraping. */
+  enriched?: Enrichment | undefined;
+  /** Excluded from every automation — a hard no from the business. */
+  neverContact?: boolean | undefined;
+  /** Where the lead is in its cadence, when enrolled. */
+  enrollment?: Enrollment | undefined;
+};
+
+/** What we could resolve about the business beyond its Maps listing. */
+export type Enrichment = {
+  cnpj?: string | undefined;
+  legalName?: string | undefined;
+  openedAt?: string | undefined;
+  size?: string | undefined;
+  email?: string | undefined;
+  /** Free-text notes the AI derived, shown as pitch angles. */
+  angles?: string[] | undefined;
+  checkedAt?: string | undefined;
+};
+
+/* -------------------------------------------------------------------------- */
+/*  Outreach automation                                                        */
+/* -------------------------------------------------------------------------- */
+
+export type Channel = "WhatsApp" | "Email";
+export type Tone = "Direta" | "Consultiva" | "Casual";
+
+export const TONES: Tone[] = ["Direta", "Consultiva", "Casual"];
+
+/** One touch in a cadence: wait N days, then write in this tone. */
+export type SequenceStep = {
+  /** Days to wait after the previous step. The first step is normally 0. */
+  days: number;
+  tone: Tone;
+  channel: Channel;
+};
+
+export type Sequence = {
+  id: string;
+  name: string;
+  steps: SequenceStep[];
+  active: boolean;
+  createdAt: string;
+};
+
+/**
+ * Cold outreach closes on the second and third touch, which is exactly the
+ * part a person forgets to do. This is the default we enrol leads into.
+ */
+export const DEFAULT_SEQUENCE_STEPS: SequenceStep[] = [
+  { days: 0, tone: "Consultiva", channel: "WhatsApp" },
+  { days: 3, tone: "Direta", channel: "WhatsApp" },
+  { days: 7, tone: "Casual", channel: "WhatsApp" },
+];
+
+export type EnrollmentStatus = "active" | "stopped" | "done";
+
+export type Enrollment = {
+  id: string;
+  leadId: string;
+  sequenceId: string;
+  step: number;
+  status: EnrollmentStatus;
+  nextAt: string;
+  stoppedReason?: string | undefined;
+};
+
+/** A prospecting run that repeats on its own. */
+export type Schedule = {
+  id: string;
+  name: string;
+  niche: string;
+  location: string;
+  filters: Record<string, unknown>;
+  frequency: "daily" | "weekly";
+  /** 0 = Sunday. Ignored when daily. */
+  weekday: number;
+  hour: number;
+  leadLimit: number;
+  /** Only leads at or above this score get the automatic treatment. */
+  minScore: number;
+  autoSite: boolean;
+  autoPublish: boolean;
+  autoMessage: boolean;
+  sequenceId?: string | undefined;
+  active: boolean;
+  lastRunAt?: string | undefined;
+  nextRunAt: string;
+};
+
+export type MessageDirection = "out" | "in";
+
+export type MessageStatus = "queued" | "sent" | "delivered" | "read" | "failed" | "received";
+
+/** One line of the conversation, in either direction. */
+export type OutreachMessage = {
+  id: string;
+  leadId: string;
+  direction: MessageDirection;
+  channel: "whatsapp" | "email";
+  tone: string;
+  /** A/B key of the copy that was sent, so we can measure what replies. */
+  variant: string;
+  step: number;
+  body: string;
+  status: MessageStatus;
+  error?: string | undefined;
+  createdAt: string;
+  sentAt?: string | undefined;
+};
+
+export type AlertKind = "engagement" | "hot" | "reply" | "system";
+
+export type Alert = {
+  id: string;
+  leadId?: string | undefined;
+  kind: AlertKind;
+  body: string;
+  read: boolean;
+  createdAt: string;
 };
 
 export type Campaign = {
@@ -209,7 +341,37 @@ export type Profile = {
 /*  Integrations — the user plugs in their own API keys                        */
 /* -------------------------------------------------------------------------- */
 
-export type Provider = "apify" | "anthropic" | "openai" | "netlify" | "google";
+export type Provider = "apify" | "anthropic" | "openai" | "netlify" | "google" | "whatsapp";
+
+/**
+ * The user's own WhatsApp instance. We never operate a number on their behalf:
+ * the account, the provider bill and the ban risk stay with them, and the app
+ * only borrows the instance to send. Stored in `integrations.meta`.
+ */
+export type WhatsAppSettings = {
+  baseUrl: string;
+  instance: string;
+  /** Which dialect the instance speaks. "auto" infers it from the URL. */
+  flavor: "auto" | "evolution" | "zapi" | "uazapi";
+  /** Z-API accounts that require an account-level Client-Token. */
+  clientToken?: string | undefined;
+  /** Secret in the webhook URL — how an inbound reply proves whose it is. */
+  webhookToken?: string | undefined;
+  /** Seconds to wait between automated sends, so a burst doesn't get banned. */
+  throttleSeconds?: number | undefined;
+  /** Outside these hours the queue holds the send until morning. */
+  windowStart?: number | undefined;
+  windowEnd?: number | undefined;
+};
+
+export const DEFAULT_WHATSAPP_SETTINGS: WhatsAppSettings = {
+  baseUrl: "",
+  instance: "",
+  flavor: "auto",
+  throttleSeconds: 45,
+  windowStart: 8,
+  windowEnd: 20,
+};
 
 export type Integration = {
   provider: Provider;
@@ -256,6 +418,13 @@ export const PROVIDER_INFO: Record<
     help: "Aumenta o limite da análise do site atual do lead. Sem chave funciona, só com cota menor.",
     url: "https://developers.google.com/speed/docs/insights/v5/get-started",
     placeholder: "AIza...",
+    required: false,
+  },
+  whatsapp: {
+    label: "WhatsApp (sua instância)",
+    help: "Conecte a SUA instância (Evolution, Z-API, Uazapi). Sem ela o envio continua manual pelo wa.me.",
+    url: "https://doc.evolution-api.com",
+    placeholder: "token da instância",
     required: false,
   },
 };

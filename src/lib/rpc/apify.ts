@@ -158,6 +158,8 @@ export const scrapeLeads = createServerFn({ method: "POST" })
         ...partial,
         score,
         reasons,
+        // Behavioural score starts at zero: the business has not seen anything yet.
+        engagement: 0,
         stage: "Novo",
         createdAt: now,
         activities: [{ at: now, text: "Lead encontrado no Google Maps" }],

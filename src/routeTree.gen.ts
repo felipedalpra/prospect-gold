@@ -15,8 +15,10 @@ import { Route as AuthRouteImport } from './routes/auth'
 import { Route as OnboardingRouteImport } from './routes/onboarding'
 import { Route as AppIndexRouteImport } from './routes/app.index'
 import { Route as AppAbordagensRouteImport } from './routes/app.abordagens'
+import { Route as AppAutomacoesRouteImport } from './routes/app.automacoes'
 import { Route as AppCampanhasRouteImport } from './routes/app.campanhas'
 import { Route as AppConfiguracoesRouteImport } from './routes/app.configuracoes'
+import { Route as AppConversasRouteImport } from './routes/app.conversas'
 import { Route as AppPipelineRouteImport } from './routes/app.pipeline'
 import { Route as AppProspectarRouteImport } from './routes/app.prospectar'
 import { Route as AppSitesRouteImport } from './routes/app.sites'
@@ -54,6 +56,11 @@ const AppAbordagensRoute = AppAbordagensRouteImport.update({
   path: '/abordagens',
   getParentRoute: () => AppRoute,
 } as any)
+const AppAutomacoesRoute = AppAutomacoesRouteImport.update({
+  id: '/automacoes',
+  path: '/automacoes',
+  getParentRoute: () => AppRoute,
+} as any)
 const AppCampanhasRoute = AppCampanhasRouteImport.update({
   id: '/campanhas',
   path: '/campanhas',
@@ -62,6 +69,11 @@ const AppCampanhasRoute = AppCampanhasRouteImport.update({
 const AppConfiguracoesRoute = AppConfiguracoesRouteImport.update({
   id: '/configuracoes',
   path: '/configuracoes',
+  getParentRoute: () => AppRoute,
+} as any)
+const AppConversasRoute = AppConversasRouteImport.update({
+  id: '/conversas',
+  path: '/conversas',
   getParentRoute: () => AppRoute,
 } as any)
 const AppPipelineRoute = AppPipelineRouteImport.update({
@@ -101,8 +113,10 @@ export interface FileRoutesByFullPath {
   '/auth': typeof AuthRoute
   '/onboarding': typeof OnboardingRoute
   '/app/abordagens': typeof AppAbordagensRoute
+  '/app/automacoes': typeof AppAutomacoesRoute
   '/app/campanhas': typeof AppCampanhasRoute
   '/app/configuracoes': typeof AppConfiguracoesRoute
+  '/app/conversas': typeof AppConversasRoute
   '/app/pipeline': typeof AppPipelineRoute
   '/app/prospectar': typeof AppProspectarRoute
   '/app/sites': typeof AppSitesRoute
@@ -116,8 +130,10 @@ export interface FileRoutesByTo {
   '/auth': typeof AuthRoute
   '/onboarding': typeof OnboardingRoute
   '/app/abordagens': typeof AppAbordagensRoute
+  '/app/automacoes': typeof AppAutomacoesRoute
   '/app/campanhas': typeof AppCampanhasRoute
   '/app/configuracoes': typeof AppConfiguracoesRoute
+  '/app/conversas': typeof AppConversasRoute
   '/app/pipeline': typeof AppPipelineRoute
   '/app/prospectar': typeof AppProspectarRoute
   '/app/sites': typeof AppSitesRoute
@@ -133,8 +149,10 @@ export interface FileRoutesById {
   '/auth': typeof AuthRoute
   '/onboarding': typeof OnboardingRoute
   '/app/abordagens': typeof AppAbordagensRoute
+  '/app/automacoes': typeof AppAutomacoesRoute
   '/app/campanhas': typeof AppCampanhasRoute
   '/app/configuracoes': typeof AppConfiguracoesRoute
+  '/app/conversas': typeof AppConversasRoute
   '/app/pipeline': typeof AppPipelineRoute
   '/app/prospectar': typeof AppProspectarRoute
   '/app/sites': typeof AppSitesRoute
@@ -151,8 +169,10 @@ export interface FileRouteTypes {
     | '/auth'
     | '/onboarding'
     | '/app/abordagens'
+    | '/app/automacoes'
     | '/app/campanhas'
     | '/app/configuracoes'
+    | '/app/conversas'
     | '/app/pipeline'
     | '/app/prospectar'
     | '/app/sites'
@@ -166,8 +186,10 @@ export interface FileRouteTypes {
     | '/auth'
     | '/onboarding'
     | '/app/abordagens'
+    | '/app/automacoes'
     | '/app/campanhas'
     | '/app/configuracoes'
+    | '/app/conversas'
     | '/app/pipeline'
     | '/app/prospectar'
     | '/app/sites'
@@ -182,8 +204,10 @@ export interface FileRouteTypes {
     | '/auth'
     | '/onboarding'
     | '/app/abordagens'
+    | '/app/automacoes'
     | '/app/campanhas'
     | '/app/configuracoes'
+    | '/app/conversas'
     | '/app/pipeline'
     | '/app/prospectar'
     | '/app/sites'
@@ -245,6 +269,13 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof AppAbordagensRouteImport
       parentRoute: typeof AppRoute
     }
+    '/app/automacoes': {
+      id: '/app/automacoes'
+      path: '/automacoes'
+      fullPath: '/app/automacoes'
+      preLoaderRoute: typeof AppAutomacoesRouteImport
+      parentRoute: typeof AppRoute
+    }
     '/app/campanhas': {
       id: '/app/campanhas'
       path: '/campanhas'
@@ -257,6 +288,13 @@ declare module '@tanstack/react-router' {
       path: '/configuracoes'
       fullPath: '/app/configuracoes'
       preLoaderRoute: typeof AppConfiguracoesRouteImport
+      parentRoute: typeof AppRoute
+    }
+    '/app/conversas': {
+      id: '/app/conversas'
+      path: '/conversas'
+      fullPath: '/app/conversas'
+      preLoaderRoute: typeof AppConversasRouteImport
       parentRoute: typeof AppRoute
     }
     '/app/pipeline': {
@@ -306,8 +344,10 @@ declare module '@tanstack/react-router' {
 
 interface AppRouteChildren {
   AppAbordagensRoute: typeof AppAbordagensRoute
+  AppAutomacoesRoute: typeof AppAutomacoesRoute
   AppCampanhasRoute: typeof AppCampanhasRoute
   AppConfiguracoesRoute: typeof AppConfiguracoesRoute
+  AppConversasRoute: typeof AppConversasRoute
   AppPipelineRoute: typeof AppPipelineRoute
   AppProspectarRoute: typeof AppProspectarRoute
   AppSitesRoute: typeof AppSitesRoute
@@ -318,8 +358,10 @@ interface AppRouteChildren {
 
 const AppRouteChildren: AppRouteChildren = {
   AppAbordagensRoute: AppAbordagensRoute,
+  AppAutomacoesRoute: AppAutomacoesRoute,
   AppCampanhasRoute: AppCampanhasRoute,
   AppConfiguracoesRoute: AppConfiguracoesRoute,
+  AppConversasRoute: AppConversasRoute,
   AppPipelineRoute: AppPipelineRoute,
   AppProspectarRoute: AppProspectarRoute,
   AppSitesRoute: AppSitesRoute,

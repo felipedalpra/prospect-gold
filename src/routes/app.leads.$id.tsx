@@ -9,9 +9,10 @@ import { Label } from "@/components/ui/label";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { ScoreRing, scoreLabel } from "@/components/shared/ScoreBadge";
 import { SitePreview } from "@/components/app/SitePreview";
+import { Switch } from "@/components/ui/switch";
 import { useStore } from "@/lib/store";
 import { copySiteHtml, downloadSiteHtml } from "@/lib/download";
-import { STAGES, type Stage } from "@/lib/types";
+import { DEFAULT_SEQUENCE_STEPS, STAGES, type Lead, type Stage } from "@/lib/types";
 import { cn } from "@/lib/utils";
 import {
   ArrowLeft,
@@ -30,6 +31,7 @@ import {
   Rocket,
   Sparkles,
   Star,
+  Workflow,
 } from "lucide-react";
 
 export const Route = createFileRoute("/app/leads/$id")({
@@ -400,6 +402,9 @@ function LeadDetail() {
                 )}
               </div>
             </section>
+
+            <CadencePanel lead={lead} />
+            <IntelPanel lead={lead} />
           </div>
         </TabsContent>
 
@@ -777,6 +782,224 @@ function LeadDetail() {
           </ul>
         </TabsContent>
       </Tabs>
+    </div>
+  );
+}
+
+/* -------------------------------------------------------------------------- */
+/*  Cadence                                                                    */
+/* -------------------------------------------------------------------------- */
+
+/**
+ * Enrolling is the difference between "I sent one message" and "this business
+ * hears from me three times over ten days, unless it answers". Everything that
+ * stops the cadence — a reply, a click on the page — happens without the seller
+ * having to remember anything, so the panel's job is mostly to show state.
+ */
+function CadencePanel({ lead }: { lead: Lead }) {
+  const { state, enrollLead, stopCadence, whatsappReady } = useStore();
+  const [busy, setBusy] = useState(false);
+
+  const enrollment = lead.enrollment;
+  const sequence = state.sequences.find((s) => s.id === enrollment?.sequenceId);
+  const steps = sequence?.steps ?? DEFAULT_SEQUENCE_STEPS;
+  const active = enrollment?.status === "active";
+
+  return (
+    <section className="rounded-xl border border-border bg-surface p-6">
+      <div className="flex flex-wrap items-center gap-2">
+        <Workflow className="h-4 w-4 text-primary" />
+        <h2 className="text-sm font-semibold">Cadência</h2>
+        {active && (
+          <span className="rounded-full bg-primary/15 px-2 py-0.5 text-[11px] text-primary">
+            Passo {Math.min(enrollment.step + 1, steps.length)} de {steps.length}
+          </span>
+        )}
+      </div>
+
+      {active ? (
+        <>
+          <ol className="mt-4 space-y-1.5">
+            {steps.map((step, i) => {
+              const done = i < enrollment.step;
+              const current = i === enrollment.step;
+              return (
+                <li
+                  key={i}
+                  className={cn(
+                    "flex items-center gap-2.5 rounded-lg px-2.5 py-2 text-xs",
+                    current ? "bg-primary/10 text-foreground" : "text-muted-foreground",
+                  )}
+                >
+                  <span
+                    className={cn(
+                      "grid h-5 w-5 shrink-0 place-items-center rounded-full text-[10px] font-bold",
+                      done
+                        ? "bg-primary/20 text-primary"
+                        : current
+                          ? "bg-primary text-background"
+                          : "bg-muted",
+                    )}
+                  >
+                    {done ? "✓" : i + 1}
+                  </span>
+                  <span>{step.tone}</span>
+                  <span className="text-[11px]">
+                    {i === 0 ? "na hora" : `+${step.days} dia(s)`}
+                  </span>
+                </li>
+              );
+            })}
+          </ol>
+
+          <p className="mt-3 text-xs text-muted-foreground">
+            Próximo toque{" "}
+            <b className="text-primary">
+              {new Date(enrollment.nextAt).toLocaleString("pt-BR", {
+                day: "2-digit",
+                month: "2-digit",
+                hour: "2-digit",
+                minute: "2-digit",
+              })}
+            </b>
+            . Se o lead responder ou clicar no CTA da página, a cadência para sozinha.
+          </p>
+
+          <Button
+            size="sm"
+            variant="ghost"
+            className="mt-3"
+            onClick={() => void stopCadence(lead.id, "Encerrada manualmente")}
+          >
+            Parar cadência
+          </Button>
+        </>
+      ) : (
+        <>
+          <p className="mt-1 text-xs text-muted-foreground">
+            {enrollment?.status === "stopped"
+              ? `Cadência encerrada: ${enrollment.stoppedReason ?? "manualmente"}.`
+              : enrollment?.status === "done"
+                ? "Cadência concluída — todos os toques foram enviados."
+                : "Três toques ao longo de dez dias, com tons diferentes. Para sozinha na resposta."}
+          </p>
+          {!whatsappReady && (
+            <p className="mt-3 rounded-lg border border-warning/30 bg-warning/10 p-2.5 text-[11px] text-warning">
+              Sem instância conectada, cada toque ainda vai pedir um clique seu.
+            </p>
+          )}
+          <Button
+            size="sm"
+            variant="gold"
+            className="mt-4"
+            disabled={busy || !lead.phone || lead.neverContact}
+            onClick={() => {
+              setBusy(true);
+              void enrollLead(lead.id)
+                .then(() => toast.success("Lead em cadência — primeiro toque a caminho"))
+                .catch((e: unknown) =>
+                  toast.error(e instanceof Error ? e.message : "Não foi possível."),
+                )
+                .finally(() => setBusy(false));
+            }}
+          >
+            <Workflow className="h-3.5 w-3.5" />
+            {enrollment ? "Reiniciar cadência" : "Colocar em cadência"}
+          </Button>
+          {!lead.phone && (
+            <p className="mt-2 text-[11px] text-muted-foreground">
+              Este lead não tem telefone — adicione um acima para usar cadência.
+            </p>
+          )}
+        </>
+      )}
+    </section>
+  );
+}
+
+/* -------------------------------------------------------------------------- */
+/*  Enrichment                                                                 */
+/* -------------------------------------------------------------------------- */
+
+/**
+ * The facts that turn a generic opener into one this business cannot ignore.
+ * Everything here is derived from the lead's own site and the public registry,
+ * so it costs nothing and can run on every lead automatically.
+ */
+function IntelPanel({ lead }: { lead: Lead }) {
+  const { enrich, setNeverContact } = useStore();
+  const [busy, setBusy] = useState(false);
+  const intel = lead.enriched;
+
+  return (
+    <section className="rounded-xl border border-border bg-surface p-6">
+      <div className="flex flex-wrap items-center justify-between gap-2">
+        <div className="flex items-center gap-2">
+          <Sparkles className="h-4 w-4 text-primary" />
+          <h2 className="text-sm font-semibold">Ângulos de abordagem</h2>
+        </div>
+        <Button
+          size="sm"
+          variant="goldline"
+          disabled={busy}
+          onClick={() => {
+            setBusy(true);
+            void enrich(lead.id)
+              .then(() => toast.success("Lead enriquecido"))
+              .catch((e: unknown) =>
+                toast.error(e instanceof Error ? e.message : "Não foi possível enriquecer."),
+              )
+              .finally(() => setBusy(false));
+          }}
+        >
+          {busy ? "Lendo..." : intel?.checkedAt ? "Atualizar" : "Enriquecer"}
+        </Button>
+      </div>
+
+      {intel?.angles?.length ? (
+        <ul className="mt-4 space-y-2">
+          {intel.angles.map((angle, i) => (
+            <li key={i} className="flex gap-2.5 text-sm">
+              <span className="mt-1.5 h-1.5 w-1.5 shrink-0 rounded-full bg-primary" />
+              <span className="text-foreground/85">{angle}</span>
+            </li>
+          ))}
+        </ul>
+      ) : (
+        <p className="mt-4 text-xs text-muted-foreground">
+          Lê o site atual do lead (plataforma, ano do rodapé, e-mail público) e, se achar o CNPJ no
+          rodapé, busca o registro na Receita. Nenhuma chave de API nova é necessária.
+        </p>
+      )}
+
+      {(intel?.legalName || intel?.cnpj || lead.email) && (
+        <dl className="mt-5 space-y-1.5 border-t border-border/50 pt-4 text-xs">
+          {intel?.legalName && <Row label="Razão social" value={intel.legalName} />}
+          {intel?.cnpj && <Row label="CNPJ" value={intel.cnpj} />}
+          {intel?.openedAt && (
+            <Row label="Aberta em" value={new Date(intel.openedAt).toLocaleDateString("pt-BR")} />
+          )}
+          {intel?.size && <Row label="Porte" value={intel.size} />}
+          {lead.email && <Row label="E-mail" value={lead.email} />}
+        </dl>
+      )}
+
+      <label className="mt-5 flex items-center gap-2 border-t border-border/50 pt-4 text-xs text-muted-foreground">
+        <Switch
+          checked={lead.neverContact ?? false}
+          onCheckedChange={(v) => void setNeverContact(lead.id, v)}
+        />
+        Não contatar — fica de fora de toda automação
+      </label>
+    </section>
+  );
+}
+
+function Row({ label, value }: { label: string; value: string }) {
+  return (
+    <div className="flex justify-between gap-4">
+      <dt className="text-muted-foreground">{label}</dt>
+      <dd className="truncate text-right">{value}</dd>
     </div>
   );
 }
