@@ -16,7 +16,7 @@ Formato:
 
 ## [Não publicado]
 
-_Nada pendente._
+- **[Supabase]** Função `spend_credits` não bloqueia mais por saldo insuficiente (removido o `and credits >= amount`); saldo pode ficar negativo mas a ação sempre é permitida. Pedido do usuário para prospectar sem limite de créditos "por agora". Conta `felipeodriosolladalpra@gmail.com` recarregada para 1.000.000 créditos. Reverter recolocando o `and credits >= amount` no `update` quando o limite voltar a valer. — `claude` (2026-09-03)
 
 ---
 
