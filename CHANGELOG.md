@@ -16,6 +16,8 @@ Formato:
 
 ## [Não publicado]
 
+- **[Sites]** A geração agora oferece três propostas visuais, com presets de direção (luxo editorial, orgânico calmo, tech impacto e energia urbana), reordenação/ocultação de seções, preview desktop/tablet/celular e checklist de qualidade antes da publicação. — `codex` (2026-09-05)
+- **[Sites]** Adicionada direção visual editável no editor do lead: cores principal/secundária, layout, tipografia, formato, textura, fundo e animação agora atualizam a prévia e o HTML salvo automaticamente; o renderer também ganhou texturas CSS e movimento rico configurável, e respeita as cores escolhidas exatamente. — `codex` (2026-09-05)
 - **[Supabase]** Função `spend_credits` não bloqueia mais por saldo insuficiente (removido o `and credits >= amount`); saldo pode ficar negativo mas a ação sempre é permitida. Pedido do usuário para prospectar sem limite de créditos "por agora". Conta `felipeodriosolladalpra@gmail.com` recarregada para 1.000.000 créditos. Reverter recolocando o `and credits >= amount` no `update` quando o limite voltar a valer. — `claude` (2026-09-03)
 
 ---

@@ -61,6 +61,8 @@ export const SITE_BLOCK_KINDS: SiteBlockKind[] = [
  */
 export type SiteBlock = {
   kind: SiteBlockKind;
+  /** Hidden blocks stay in the editor but are omitted from the published page. */
+  enabled?: boolean | undefined;
   /** Visual treatment within the kind, e.g. hero "split" vs "full". */
   variant?: string | undefined;
   /** Section heading, when the block shows one. */
@@ -75,6 +77,10 @@ export type SiteBlock = {
 export type SiteTypeface = "sans" | "serif" | "mixed" | "condensed";
 
 export const SITE_TYPEFACES: SiteTypeface[] = ["sans", "serif", "mixed", "condensed"];
+
+export type SiteTexture = "none" | "grain" | "grid" | "dots" | "paper";
+
+export const SITE_TEXTURES: SiteTexture[] = ["none", "grain", "grid", "dots", "paper"];
 
 export type SiteSection = {
   headline: string;
@@ -105,6 +111,8 @@ export type SiteSection = {
   typeface?: SiteTypeface | undefined;
   /** Corner language: sharp edges vs soft. */
   shape?: "sharp" | "soft" | "round" | undefined;
+  /** Background treatment chosen by the art direction or by the seller. */
+  texture?: SiteTexture | undefined;
 };
 
 /** A second take on the same business, so the seller can pick or send both. */

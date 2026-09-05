@@ -105,6 +105,7 @@ Responda SEMPRE com um único objeto JSON válido, sem texto antes ou depois, se
     "accent": "#RRGGBB",
     "secondary": "#RRGGBB",
     "motion": "subtle | rich",
+    "texture": "none | grain | grid | dots | paper",
     "headline": "...",
     "subheadline": "...",
     "about": "...",
@@ -148,6 +149,7 @@ Regras dos blocos:
 - "shape": sharp (cantos retos), soft, round.
 - accent e secondary saem da identidade provável do negócio. Não use sempre dourado, e não repita a mesma paleta do segmento — dois psicólogos não podem sair os dois em azul-claro.
 - "mode" escuro só quando combina com o clima do negócio.
+- "texture" deve reforçar a direção visual: grain para artesanal/editorial, grid para tech/industrial, dots para algo leve, paper para orgânico/premium e none quando a imagem deve respirar.
 
 ## Conteúdo
 
@@ -185,6 +187,7 @@ function normalizeBlocks(raw: unknown): SiteBlock[] | undefined {
     const b = entry as SiteBlock;
     out.push({
       kind,
+      enabled: b.enabled !== false,
       variant: typeof b.variant === "string" ? b.variant : undefined,
       title: typeof b.title === "string" ? b.title : undefined,
       eyebrow: typeof b.eyebrow === "string" ? b.eyebrow : undefined,
@@ -273,6 +276,13 @@ export const generateSite = createServerFn({ method: "POST" })
             : undefined,
       secondary: parsed.content.secondary,
       motion: parsed.content.motion === "subtle" ? "subtle" : "rich",
+      texture:
+        parsed.content.texture === "grain" ||
+        parsed.content.texture === "grid" ||
+        parsed.content.texture === "dots" ||
+        parsed.content.texture === "paper"
+          ? parsed.content.texture
+          : "none",
       serviceNotes: Array.isArray(parsed.content.serviceNotes)
         ? parsed.content.serviceNotes
         : undefined,
@@ -296,13 +306,11 @@ export const generateSite = createServerFn({ method: "POST" })
       ...(photoWarning ? { photoWarning } : {}),
       // A remix costs no tokens: same copy, re-derived architecture and type.
       variants: data.withVariant
-        ? [
-            {
-              template: `${parsed.template}-b`,
-              content,
-              html: renderSiteHtml(data.lead, content, parsed.template, { ...render, remix: 1 }),
-            },
-          ]
+        ? [1, 2].map((remix) => ({
+            template: `${parsed.template}-${String.fromCharCode(97 + remix)}`,
+            content: { ...content, blocks: undefined, layout: undefined, typeface: undefined },
+            html: renderSiteHtml(data.lead, content, parsed.template, { ...render, remix }),
+          }))
         : undefined,
     };
   });

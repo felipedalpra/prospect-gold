@@ -1,7 +1,7 @@
 import { useState } from "react";
 import type { Lead } from "@/lib/types";
 import { cn } from "@/lib/utils";
-import { Monitor, Smartphone } from "lucide-react";
+import { Monitor, Smartphone, Tablet } from "lucide-react";
 
 /**
  * Renders the actual generated document in a sandboxed iframe — what you see
@@ -16,7 +16,7 @@ export function SitePreview({
   html: string;
   template: string;
 }) {
-  const [device, setDevice] = useState<"desktop" | "mobile">("desktop");
+  const [device, setDevice] = useState<"desktop" | "tablet" | "mobile">("desktop");
 
   return (
     <div className="overflow-hidden rounded-xl border border-border bg-background">
@@ -32,13 +32,20 @@ export function SitePreview({
           {(
             [
               ["desktop", Monitor],
+              ["tablet", Tablet],
               ["mobile", Smartphone],
             ] as const
           ).map(([mode, Icon]) => (
             <button
               key={mode}
               onClick={() => setDevice(mode)}
-              title={mode === "desktop" ? "Ver como desktop" : "Ver como celular"}
+              title={
+                mode === "desktop"
+                  ? "Ver como desktop"
+                  : mode === "tablet"
+                    ? "Ver como tablet"
+                    : "Ver como celular"
+              }
               className={cn(
                 "rounded p-1 transition-colors",
                 device === mode
@@ -52,7 +59,7 @@ export function SitePreview({
         </div>
       </div>
 
-      <div className={cn("bg-surface-2", device === "mobile" && "flex justify-center p-4")}>
+      <div className={cn("bg-surface-2", device !== "desktop" && "flex justify-center p-4")}>
         <iframe
           title={`Site de ${lead.name}`}
           srcDoc={html}
@@ -61,7 +68,9 @@ export function SitePreview({
             "h-[620px] border-0 bg-white",
             device === "desktop"
               ? "w-full"
-              : "w-[390px] rounded-2xl border border-border shadow-lg",
+              : device === "tablet"
+                ? "w-[768px] rounded-xl border border-border shadow-lg"
+                : "w-[390px] rounded-2xl border border-border shadow-lg",
           )}
         />
       </div>

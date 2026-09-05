@@ -5,8 +5,9 @@ import type {
   SiteLayout,
   SiteSection,
   SiteTypeface,
+  SiteTexture,
 } from "./types";
-import { SITE_BLOCK_KINDS, SITE_TYPEFACES } from "./types";
+import { SITE_BLOCK_KINDS, SITE_TEXTURES, SITE_TYPEFACES } from "./types";
 
 /* -------------------------------------------------------------------------- */
 /*  Helpers                                                                    */
@@ -296,6 +297,7 @@ type Identity = {
   logo?: string | undefined;
   mono: string;
   motion: "subtle" | "rich";
+  texture: SiteTexture;
   seed: number;
   blocks: SiteBlock[];
 };
@@ -409,8 +411,14 @@ function identityOf(lead: Lead, content: SiteSection, template: string, remix = 
       : content;
   // The AI reliably answers "psicólogo" (and every other segment) with the same
   // palette, so its colour is a starting hue, not the final one.
-  const accent = shiftHue(hex(chosen.accent, "#C8A24A"), ((seed % 9) - 4) * 14);
-  const secondary = shiftHue(hex(chosen.secondary, accent), (((seed >> 3) % 9) - 4) * 14);
+  // Explicit colours are respected exactly so the visual editor is predictable.
+  // Generated pages still get a seeded fallback when the model omitted a colour.
+  const accent = chosen.accent
+    ? hex(chosen.accent, "#C8A24A")
+    : shiftHue("#C8A24A", ((seed % 9) - 4) * 14);
+  const secondary = chosen.secondary
+    ? hex(chosen.secondary, accent)
+    : shiftHue(accent, (((seed >> 3) % 9) - 4) * 14);
 
   const layoutBase: SiteLayout =
     chosen.layout && LAYOUTS.includes(chosen.layout)
@@ -447,7 +455,12 @@ function identityOf(lead: Lead, content: SiteSection, template: string, remix = 
     ),
     // A dark page is a strong choice, so it is kept when the AI asks for one,
     // and otherwise handed to a minority of leads rather than to a whole layout.
-    mode: chosen.mode === "dark" || layout === "immersive" || seed % 5 === 0 ? "dark" : "light",
+    mode:
+      chosen.mode === "dark" || chosen.mode === "light"
+        ? chosen.mode
+        : layout === "immersive" || seed % 5 === 0
+          ? "dark"
+          : "light",
     accent,
     secondary,
     onAccent: readableOn(accent),
@@ -455,6 +468,7 @@ function identityOf(lead: Lead, content: SiteSection, template: string, remix = 
     logo: chosen.logo ?? lead.logo,
     mono: initials(lead.name),
     motion: chosen.motion === "subtle" ? "subtle" : "rich",
+    texture: chosen.texture && SITE_TEXTURES.includes(chosen.texture) ? chosen.texture : "none",
     seed,
     blocks,
   };
@@ -466,6 +480,16 @@ function identityOf(lead: Lead, content: SiteSection, template: string, remix = 
 
 function palette(id: Identity): string {
   const dark = id.mode === "dark";
+  const texture =
+    id.texture === "grain"
+      ? "background-image:url(\"data:image/svg+xml,%3Csvg viewBox='0 0 180 180' xmlns='http://www.w3.org/2000/svg'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='.8' numOctaves='4' stitchTiles='stitch'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23n)' opacity='.16'/%3E%3C/svg%3E\");background-size:180px 180px"
+      : id.texture === "grid"
+        ? "background-image:linear-gradient(color-mix(in srgb,var(--accent) 10%,transparent) 1px,transparent 1px),linear-gradient(90deg,color-mix(in srgb,var(--accent) 10%,transparent) 1px,transparent 1px);background-size:42px 42px"
+        : id.texture === "dots"
+          ? "background-image:radial-gradient(color-mix(in srgb,var(--accent) 22%,transparent) 1px,transparent 1px);background-size:24px 24px"
+          : id.texture === "paper"
+            ? "background-image:radial-gradient(color-mix(in srgb,var(--ink) 7%,transparent) .7px,transparent .7px);background-size:5px 5px"
+            : "";
   return `:root{
 --accent:${id.accent};--accent2:${id.secondary};--on-accent:${id.onAccent};
 --bg:${dark ? "#0a0a0b" : "#ffffff"};
@@ -475,7 +499,8 @@ function palette(id: Identity): string {
 --line:${dark ? "rgba(255,255,255,.13)" : "rgba(20,20,20,.12)"};
 --card:${dark ? "#141417" : "#ffffff"};
 --shadow:${dark ? "0 30px 80px rgba(0,0,0,.6)" : "0 24px 60px rgba(20,20,20,.10)"};
-}`;
+}
+body{${texture}}`;
 }
 
 const RESET = `*{box-sizing:border-box}html{scroll-behavior:smooth;-webkit-text-size-adjust:100%}
@@ -702,6 +727,17 @@ h2{font-size:${r.h2};line-height:1.12}
 .links{display:flex;gap:26px;font-size:14px;color:var(--muted)}
 .links a:hover{color:var(--ink)}
 .card{background:var(--card);border:1px solid var(--line);border-radius:var(--rad);padding:26px;box-shadow:var(--shadow)}
+body:before{content:"";position:fixed;inset:0;pointer-events:none;z-index:-1;background:radial-gradient(circle at 10% 0%,color-mix(in srgb,var(--accent) 10%,transparent),transparent 34%),radial-gradient(circle at 90% 20%,color-mix(in srgb,var(--accent2) 8%,transparent),transparent 30%);opacity:.8}
+${
+  id.motion === "rich"
+    ? `
+@keyframes float-orb{0%,100%{transform:translate3d(0,0,0)}50%{transform:translate3d(0,-12px,0)}}
+@keyframes accent-pulse{0%,100%{box-shadow:0 0 0 0 color-mix(in srgb,var(--accent) 0%,transparent)}50%{box-shadow:0 0 0 10px color-mix(in srgb,var(--accent) 0%,transparent)}}
+.hero:after{content:"";position:absolute;width:180px;height:180px;border-radius:50%;background:color-mix(in srgb,var(--accent) 13%,transparent);filter:blur(3px);pointer-events:none;animation:float-orb 8s ease-in-out infinite}
+.btn.primary{animation:accent-pulse 4s ease-in-out infinite}
+`
+    : ""
+}
 @media(max-width:860px){:root{--pad:${Math.round(r.pad * 0.62)}px}.links{display:none}}`;
 }
 /* -------------------------------------------------------------------------- */
@@ -1253,6 +1289,7 @@ export function renderSiteHtml(
   const css: string[] = [];
   const body: string[] = [];
   for (const block of id.blocks) {
+    if (block.enabled === false) continue;
     const render = BLOCKS[block.kind];
     if (!render) continue;
     const part = render(x, block);

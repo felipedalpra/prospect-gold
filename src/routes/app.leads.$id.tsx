@@ -12,13 +12,23 @@ import { SitePreview } from "@/components/app/SitePreview";
 import { Switch } from "@/components/ui/switch";
 import { useStore } from "@/lib/store";
 import { copySiteHtml, downloadSiteHtml } from "@/lib/download";
-import { DEFAULT_SEQUENCE_STEPS, STAGES, type Lead, type Stage } from "@/lib/types";
+import {
+  DEFAULT_SEQUENCE_STEPS,
+  SITE_LAYOUTS,
+  SITE_TEXTURES,
+  SITE_TYPEFACES,
+  STAGES,
+  type Lead,
+  type SiteSection,
+  type Stage,
+} from "@/lib/types";
 import { cn } from "@/lib/utils";
 import {
   ArrowLeft,
   CalendarClock,
   Code2,
   Eye,
+  EyeOff,
   Gauge,
   Copy,
   Download,
@@ -48,6 +58,156 @@ export const Route = createFileRoute("/app/leads/$id")({
   }),
   component: LeadDetail,
 });
+
+function VisualSelect({
+  label,
+  value,
+  options,
+  onChange,
+}: {
+  label: string;
+  value: string;
+  options: readonly string[];
+  onChange: (value: string) => void;
+}) {
+  return (
+    <label className="space-y-1.5">
+      <span className="text-[11px] text-muted-foreground">{label}</span>
+      <select
+        value={value}
+        onChange={(event) => onChange(event.target.value)}
+        className="h-9 w-full rounded-md border border-input bg-background px-2 text-xs outline-none focus:ring-1 focus:ring-ring"
+      >
+        {options.map((option) => (
+          <option key={option} value={option}>
+            {option}
+          </option>
+        ))}
+      </select>
+    </label>
+  );
+}
+
+function ColorField({
+  label,
+  value,
+  onChange,
+}: {
+  label: string;
+  value: string;
+  onChange: (value: string) => void;
+}) {
+  const safe = /^#[0-9a-f]{6}$/i.test(value) ? value : "#c8a24a";
+  return (
+    <label className="space-y-1.5">
+      <span className="text-[11px] text-muted-foreground">{label}</span>
+      <div className="flex h-9 items-center gap-2 rounded-md border border-input bg-background px-2">
+        <input
+          type="color"
+          value={safe}
+          onChange={(event) => onChange(event.target.value)}
+          className="h-6 w-7 cursor-pointer rounded border-0 bg-transparent p-0"
+          aria-label={label}
+        />
+        <input
+          value={value}
+          onChange={(event) => onChange(event.target.value)}
+          className="min-w-0 flex-1 bg-transparent text-xs outline-none"
+          spellCheck={false}
+          aria-label={`${label} em hexadecimal`}
+        />
+      </div>
+    </label>
+  );
+}
+
+const VISUAL_PRESETS: Record<string, Partial<SiteSection> & { label: string }> = {
+  "luxo-editorial": {
+    label: "Luxo editorial",
+    layout: "editorial",
+    typeface: "mixed",
+    shape: "soft",
+    mode: "light",
+    texture: "paper",
+    motion: "subtle",
+    accent: "#9b6b3d",
+    secondary: "#e6c9a8",
+  },
+  "organico-calmo": {
+    label: "Orgânico calmo",
+    layout: "minimal",
+    typeface: "serif",
+    shape: "round",
+    mode: "light",
+    texture: "grain",
+    motion: "subtle",
+    accent: "#56745d",
+    secondary: "#d8c8a8",
+  },
+  "tech-impacto": {
+    label: "Tech impacto",
+    layout: "immersive",
+    typeface: "condensed",
+    shape: "sharp",
+    mode: "dark",
+    texture: "grid",
+    motion: "rich",
+    accent: "#7c5cff",
+    secondary: "#28d7c3",
+  },
+  "energia-urbana": {
+    label: "Energia urbana",
+    layout: "showcase",
+    typeface: "sans",
+    shape: "sharp",
+    mode: "dark",
+    texture: "dots",
+    motion: "rich",
+    accent: "#f05d3d",
+    secondary: "#f4c95d",
+  },
+};
+
+function QualityChecklist({ content, lead }: { content: SiteSection; lead: Lead }) {
+  const checks = [
+    [Boolean(content.headline.trim()), "Headline preenchida"],
+    [content.services.filter(Boolean).length >= 3, "Pelo menos 3 serviços"],
+    [Boolean(content.cta.trim()) && Boolean(lead.phone), "CTA e WhatsApp configurados"],
+    [(content.images?.length ?? lead.images?.length ?? 0) > 0, "Imagem disponível para o hero"],
+    [
+      (content.blocks?.filter((block) => block.enabled !== false).length ?? 0) >= 4,
+      "Arquitetura com 4+ seções",
+    ],
+    [Boolean(content.accent?.match(/^#[0-9a-f]{6}$/i)), "Cor principal válida"],
+    [Boolean(content.secondary?.match(/^#[0-9a-f]{6}$/i)), "Cor secundária válida"],
+  ] as const;
+  const score = Math.round((checks.filter(([ok]) => ok).length / checks.length) * 100);
+  return (
+    <div className="rounded-xl border border-border bg-surface p-4">
+      <div className="flex items-center justify-between gap-3">
+        <div>
+          <h3 className="text-sm font-semibold">Checklist de qualidade</h3>
+          <p className="mt-1 text-[11px] text-muted-foreground">
+            Verificações rápidas antes de publicar.
+          </p>
+        </div>
+        <span className={cn("text-lg font-bold", score >= 85 ? "text-success" : "text-warning")}>
+          {score}%
+        </span>
+      </div>
+      <div className="mt-3 grid gap-1.5 sm:grid-cols-2">
+        {checks.map(([ok, label]) => (
+          <div key={label} className="flex items-center gap-2 text-xs">
+            <span className={cn("text-sm", ok ? "text-success" : "text-warning")}>
+              {ok ? "✓" : "!"}
+            </span>
+            <span className={ok ? "text-foreground/80" : "text-muted-foreground"}>{label}</span>
+          </div>
+        ))}
+      </div>
+    </div>
+  );
+}
 
 function LeadDetail() {
   const { id } = useParams({ from: "/app/leads/$id" });
@@ -159,6 +319,7 @@ function LeadDetail() {
 
   const label = scoreLabel(lead.score);
   const content = lead.site?.content;
+  const blocks = content?.blocks ?? [];
   const whatsappNumber = lead.phone?.replace(/\D/g, "");
 
   return (
@@ -487,9 +648,179 @@ function LeadDetail() {
                 <div className="space-y-4 rounded-xl border border-border bg-surface p-5">
                   <h3 className="text-sm font-semibold">Conteúdo</h3>
                   <p className="text-[11px] text-muted-foreground">
-                    Edições aqui ficam salvas no lead. Para que apareçam na página, gere o site
-                    novamente — o HTML é escrito inteiro pela IA.
+                    Edite o conteúdo e a identidade visual. Cada alteração salva e atualiza a prévia
+                    automaticamente.
                   </p>
+                  <div className="space-y-3 border-b border-border pb-4">
+                    <div>
+                      <h3 className="text-sm font-semibold">Direção visual</h3>
+                      <p className="mt-1 text-[11px] text-muted-foreground">
+                        Ajuste as decisões principais sem precisar gerar o site novamente.
+                      </p>
+                    </div>
+                    <div className="grid grid-cols-2 gap-2">
+                      <VisualSelect
+                        label="Preset"
+                        value={
+                          Object.entries(VISUAL_PRESETS).find(([, preset]) =>
+                            ["layout", "typeface", "shape", "mode", "texture", "accent"].every(
+                              (key) =>
+                                content[key as keyof SiteSection] ===
+                                preset[key as keyof SiteSection],
+                            ),
+                          )?.[0] ?? "custom"
+                        }
+                        options={["custom", ...Object.keys(VISUAL_PRESETS)]}
+                        onChange={(value) => {
+                          const preset = VISUAL_PRESETS[value];
+                          if (preset) void patchSiteContent(lead.id, preset);
+                        }}
+                      />
+                      <VisualSelect
+                        label="Layout"
+                        value={content.layout ?? "editorial"}
+                        options={SITE_LAYOUTS}
+                        onChange={(value) =>
+                          void patchSiteContent(lead.id, { layout: value as SiteSection["layout"] })
+                        }
+                      />
+                      <VisualSelect
+                        label="Tipografia"
+                        value={content.typeface ?? "sans"}
+                        options={SITE_TYPEFACES}
+                        onChange={(value) =>
+                          void patchSiteContent(lead.id, {
+                            typeface: value as SiteSection["typeface"],
+                          })
+                        }
+                      />
+                      <VisualSelect
+                        label="Formato"
+                        value={content.shape ?? "soft"}
+                        options={["sharp", "soft", "round"]}
+                        onChange={(value) =>
+                          void patchSiteContent(lead.id, {
+                            shape: value as SiteSection["shape"],
+                          })
+                        }
+                      />
+                      <VisualSelect
+                        label="Textura"
+                        value={content.texture ?? "none"}
+                        options={SITE_TEXTURES}
+                        onChange={(value) =>
+                          void patchSiteContent(lead.id, {
+                            texture: value as SiteSection["texture"],
+                          })
+                        }
+                      />
+                    </div>
+                    <div className="grid grid-cols-2 gap-3">
+                      <ColorField
+                        label="Cor principal"
+                        value={content.accent}
+                        onChange={(accent) => void patchSiteContent(lead.id, { accent })}
+                      />
+                      <ColorField
+                        label="Cor secundária"
+                        value={content.secondary ?? content.accent}
+                        onChange={(secondary) => void patchSiteContent(lead.id, { secondary })}
+                      />
+                    </div>
+                    <div className="grid grid-cols-2 gap-2">
+                      <VisualSelect
+                        label="Fundo"
+                        value={content.mode ?? "light"}
+                        options={["light", "dark"]}
+                        onChange={(value) =>
+                          void patchSiteContent(lead.id, {
+                            mode: value as SiteSection["mode"],
+                          })
+                        }
+                      />
+                      <VisualSelect
+                        label="Animação"
+                        value={content.motion ?? "rich"}
+                        options={["subtle", "rich"]}
+                        onChange={(value) =>
+                          void patchSiteContent(lead.id, {
+                            motion: value as SiteSection["motion"],
+                          })
+                        }
+                      />
+                    </div>
+                  </div>
+                  {blocks.length > 0 && (
+                    <div className="space-y-2 border-b border-border pb-4">
+                      <div>
+                        <h3 className="text-sm font-semibold">Seções</h3>
+                        <p className="mt-1 text-[11px] text-muted-foreground">
+                          Reordene ou oculte blocos sem gerar o site novamente.
+                        </p>
+                      </div>
+                      <div className="space-y-1.5">
+                        {blocks.map((block, index) => (
+                          <div
+                            key={`${block.kind}-${index}`}
+                            className={cn(
+                              "flex items-center gap-1.5 rounded-lg border px-2 py-1.5",
+                              block.enabled === false
+                                ? "border-border/50 opacity-50"
+                                : "border-border bg-background",
+                            )}
+                          >
+                            <span className="min-w-0 flex-1 truncate text-xs">
+                              {index + 1}. {block.kind}
+                              {block.variant ? ` · ${block.variant}` : ""}
+                            </span>
+                            <button
+                              className="rounded p-1 text-muted-foreground hover:text-foreground disabled:opacity-30"
+                              disabled={index === 0}
+                              onClick={() => {
+                                const next = [...blocks];
+                                [next[index - 1]!, next[index]!] = [next[index]!, next[index - 1]!];
+                                void patchSiteContent(lead.id, { blocks: next });
+                              }}
+                              title="Mover para cima"
+                            >
+                              ↑
+                            </button>
+                            <button
+                              className="rounded p-1 text-muted-foreground hover:text-foreground disabled:opacity-30"
+                              disabled={index === blocks.length - 1}
+                              onClick={() => {
+                                const next = [...blocks];
+                                [next[index]!, next[index + 1]!] = [next[index + 1]!, next[index]!];
+                                void patchSiteContent(lead.id, { blocks: next });
+                              }}
+                              title="Mover para baixo"
+                            >
+                              ↓
+                            </button>
+                            <button
+                              className="rounded p-1 text-muted-foreground hover:text-primary"
+                              disabled={block.kind === "hero"}
+                              onClick={() => {
+                                const next = blocks.map((item, itemIndex) =>
+                                  itemIndex === index
+                                    ? { ...item, enabled: item.enabled === false }
+                                    : item,
+                                );
+                                void patchSiteContent(lead.id, { blocks: next });
+                              }}
+                              title={block.enabled === false ? "Mostrar seção" : "Ocultar seção"}
+                            >
+                              {block.enabled === false ? (
+                                <EyeOff className="h-3.5 w-3.5" />
+                              ) : (
+                                <Eye className="h-3.5 w-3.5" />
+                              )}
+                            </button>
+                          </div>
+                        ))}
+                      </div>
+                    </div>
+                  )}
                   <div className="space-y-1.5">
                     <Label>Headline</Label>
                     <Input
@@ -632,6 +963,7 @@ function LeadDetail() {
                       )}
                     </div>
                   )}
+                  <QualityChecklist content={content} lead={lead} />
                   <SitePreview
                     lead={lead}
                     html={
