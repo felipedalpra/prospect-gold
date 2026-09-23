@@ -714,7 +714,8 @@ export function StoreProvider({ children }: { children: ReactNode }) {
 
         // Reusa o slug na regeneração, do mesmo jeito que o site faz — o
         // beacon de visita continua reportando sob a mesma chave.
-        const slug = lead.diagnostic?.slug ?? `diagnostico-${slugify(lead.name)}-${lead.id.slice(0, 6)}`;
+        const slug =
+          lead.diagnostic?.slug ?? `diagnostico-${slugify(lead.name)}-${lead.id.slice(0, 6)}`;
 
         const siteAudit = lead.website
           ? (lead.siteAudit ??

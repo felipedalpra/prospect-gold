@@ -30,6 +30,7 @@ import {
   Eye,
   EyeOff,
   Gauge,
+  Github,
   Copy,
   Download,
   ExternalLink,
@@ -215,11 +216,14 @@ function LeadDetail() {
     state,
     buildSite,
     publishSite,
+    publishGithubSite,
     updateLead,
     patchSiteContent,
     moveLead,
     writeMessage,
     auditLead,
+    buildDiagnostic,
+    publishDiagnostic,
     chooseVariant,
     sendWhatsApp,
     setFollowUp,
@@ -230,12 +234,15 @@ function LeadDetail() {
 
   const [generating, setGenerating] = useState(false);
   const [publishing, setPublishing] = useState(false);
+  const [publishingGithub, setPublishingGithub] = useState(false);
   const [writing, setWriting] = useState(false);
   const [tab, setTab] = useState("overview");
   const [tone, setTone] = useState<"Direta" | "Consultiva" | "Casual">("Consultiva");
   const [channel, setChannel] = useState<"WhatsApp" | "Email">("WhatsApp");
   const [auditing, setAuditing] = useState(false);
   const [variant, setVariant] = useState(0);
+  const [generatingDiagnostic, setGeneratingDiagnostic] = useState(false);
+  const [publishingDiagnostic, setPublishingDiagnostic] = useState(false);
 
   if (state.loading) {
     return (
@@ -289,6 +296,18 @@ function LeadDetail() {
     }
   }
 
+  async function publishGithub() {
+    setPublishingGithub(true);
+    try {
+      const url = await publishGithubSite(id);
+      toast.success(`Site enviado para o GitHub: ${url}`);
+    } catch (err) {
+      toast.error(err instanceof Error ? err.message : "Falha ao enviar para o GitHub.");
+    } finally {
+      setPublishingGithub(false);
+    }
+  }
+
   async function write() {
     if (!llmProvider) {
       toast.error("Conecte Anthropic ou OpenAI em Configurações.");
@@ -314,6 +333,39 @@ function LeadDetail() {
       toast.error(err instanceof Error ? err.message : "Falha ao analisar o site.");
     } finally {
       setAuditing(false);
+    }
+  }
+
+  async function generateDiagnosticReport() {
+    if (!llmProvider) {
+      toast.error("Conecte Anthropic ou OpenAI em Configurações.");
+      return;
+    }
+    setGeneratingDiagnostic(true);
+    setTab("diagnostic");
+    try {
+      await buildDiagnostic(id);
+      toast.success("Diagnóstico gerado");
+    } catch (err) {
+      toast.error(err instanceof Error ? err.message : "Falha ao gerar o diagnóstico.");
+    } finally {
+      setGeneratingDiagnostic(false);
+    }
+  }
+
+  async function publishDiagnosticReport() {
+    if (!keyFor("netlify")) {
+      toast.error("Conecte seu token do Netlify em Configurações.");
+      return;
+    }
+    setPublishingDiagnostic(true);
+    try {
+      const url = await publishDiagnostic(id);
+      toast.success(`Publicado em ${url}`);
+    } catch (err) {
+      toast.error(err instanceof Error ? err.message : "Falha ao publicar.");
+    } finally {
+      setPublishingDiagnostic(false);
     }
   }
 
@@ -426,6 +478,7 @@ function LeadDetail() {
         <TabsList>
           <TabsTrigger value="overview">Visão geral</TabsTrigger>
           <TabsTrigger value="site">Site</TabsTrigger>
+          <TabsTrigger value="diagnostic">Diagnóstico</TabsTrigger>
           <TabsTrigger value="message">Abordagem</TabsTrigger>
           <TabsTrigger value="activity">Atividades</TabsTrigger>
         </TabsList>
@@ -917,6 +970,16 @@ function LeadDetail() {
                     </Button>
                     <Button
                       variant="goldline"
+                      className="flex-1"
+                      onClick={() => void publishGithub()}
+                      disabled={publishingGithub}
+                      title="Enviar o index.html para o repositório GitHub selecionado"
+                    >
+                      <Github className="h-4 w-4" />
+                      {publishingGithub ? "Enviando..." : "GitHub"}
+                    </Button>
+                    <Button
+                      variant="goldline"
                       onClick={() => void generate()}
                       disabled={generating}
                       title="Gerar novamente"
@@ -974,6 +1037,91 @@ function LeadDetail() {
                     template={lead.site.template}
                   />
                 </div>
+              </div>
+            </div>
+          )}
+        </TabsContent>
+
+        <TabsContent value="diagnostic" className="mt-5 space-y-4">
+          {!lead.diagnostic ? (
+            <div className="rounded-xl border border-dashed border-border p-10 text-center">
+              <p className="text-sm text-muted-foreground">
+                Nenhum diagnóstico gerado para este lead ainda.
+              </p>
+              <Button
+                variant="goldline"
+                className="mt-4"
+                onClick={() => void generateDiagnosticReport()}
+                disabled={generatingDiagnostic}
+              >
+                <Sparkles className="h-4 w-4" />{" "}
+                {generatingDiagnostic ? "Gerando..." : "Gerar diagnóstico"}
+              </Button>
+            </div>
+          ) : (
+            <div className="space-y-4">
+              <div className="flex flex-wrap items-center gap-2">
+                <Button
+                  variant="outline"
+                  size="sm"
+                  onClick={() => void generateDiagnosticReport()}
+                  disabled={generatingDiagnostic}
+                >
+                  <RefreshCw className="h-4 w-4" />{" "}
+                  {generatingDiagnostic ? "Gerando..." : "Gerar de novo"}
+                </Button>
+                <Button
+                  variant="goldline"
+                  size="sm"
+                  onClick={() => void publishDiagnosticReport()}
+                  disabled={publishingDiagnostic}
+                >
+                  <Rocket className="h-4 w-4" />{" "}
+                  {publishingDiagnostic
+                    ? "Publicando..."
+                    : lead.diagnostic.published
+                      ? "Republicar"
+                      : "Publicar"}
+                </Button>
+                {lead.diagnostic.url ? (
+                  <Button variant="outline" size="sm" asChild>
+                    <a href={lead.diagnostic.url} target="_blank" rel="noopener noreferrer">
+                      <ExternalLink className="h-4 w-4" /> Abrir
+                    </a>
+                  </Button>
+                ) : null}
+                <Button
+                  variant="outline"
+                  size="sm"
+                  onClick={() => {
+                    const w = window.open("", "_blank");
+                    if (!w || !lead.diagnostic) return;
+                    w.document.write(lead.diagnostic.html);
+                    w.document.close();
+                    w.print();
+                  }}
+                >
+                  <Download className="h-4 w-4" /> Baixar PDF
+                </Button>
+              </div>
+              <div className="rounded-xl border border-border p-5">
+                <div className="flex items-center gap-3">
+                  <ScoreRing score={lead.diagnostic.content.overallScore} />
+                  <div>
+                    <p className="text-sm font-semibold">
+                      Nota da presença digital: {lead.diagnostic.content.overallScore}/100
+                    </p>
+                    <p className="text-xs text-muted-foreground">
+                      {lead.diagnostic.published ? "Publicado" : "Ainda não publicado"}
+                    </p>
+                  </div>
+                </div>
+                <p className="mt-3 text-sm text-foreground/80">{lead.diagnostic.content.summary}</p>
+                <ol className="mt-3 list-decimal space-y-1.5 pl-5 text-sm text-muted-foreground">
+                  {lead.diagnostic.content.recommendations.map((r, i) => (
+                    <li key={i}>{r}</li>
+                  ))}
+                </ol>
               </div>
             </div>
           )}

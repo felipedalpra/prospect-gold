@@ -19,7 +19,12 @@ test("computeGmbAudit dá 100 para um perfil totalmente preenchido", () => {
 });
 
 test("computeGmbAudit dá 0 para um perfil vazio", () => {
-  const audit = computeGmbAudit({ category: "", images: [], phone: undefined, instagram: undefined });
+  const audit = computeGmbAudit({
+    category: "",
+    images: [],
+    phone: undefined,
+    instagram: undefined,
+  });
   expect(audit.completeness).toBe(0);
   expect(audit.hasPhotos).toBe(false);
 });
