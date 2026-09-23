@@ -2,9 +2,9 @@ import type { GmbAudit } from "./types";
 
 type GmbInput = {
   category: string;
-  images: string[] | undefined;
-  phone: string | undefined;
-  instagram: string | undefined;
+  images?: string[] | undefined;
+  phone?: string | undefined;
+  instagram?: string | undefined;
 };
 
 /**

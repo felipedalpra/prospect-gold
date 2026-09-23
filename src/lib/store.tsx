@@ -15,16 +15,22 @@ import { supabase } from "./supabase";
 import { computeScore, defaultFilters, slugify, type Filters } from "./score";
 import { stageIndex } from "./buckets";
 import { scrapeLeads } from "./rpc/apify";
-import { generateSite, generateMessage } from "./rpc/llm";
+import { generateSite, generateMessage, generateDiagnostic } from "./rpc/llm";
 import { publishSite as publishToNetlify } from "./rpc/netlify";
 import { auditSite } from "./rpc/audit";
 import { sendWhatsAppMessage, checkWhatsApp, type WaStatus } from "./rpc/whatsapp";
 import { enrichLead as enrichLeadRpc } from "./rpc/enrich";
+import { publishGithubFile } from "./rpc/github";
 import { renderSiteHtml } from "./site-renderer";
+import { renderDiagnosticHtml } from "./diagnostic-renderer";
+import { computeGmbAudit } from "./gmb";
+import { computeDiagnosticScore } from "./diagnostic-score";
 import type {
   Alert,
   Campaign,
   Channel,
+  DiagnosticContent,
+  DiagnosticFindings,
   Enrollment,
   Integration,
   Lead,
@@ -76,10 +82,10 @@ const EMPTY_PROFILE: Profile = {
   plan: "Free",
 };
 
-const COST = { lead: 1, site: 5, message: 1 } as const;
+const COST = { lead: 1, site: 5, message: 1, diagnostic: 5 } as const;
 
 /** What one credit of each action actually costs us in API spend, in USD. */
-export const COST_USD = { lead: 0.007, site: 0.06, message: 0.004 } as const;
+export const COST_USD = { lead: 0.007, site: 0.06, message: 0.004, diagnostic: 0.03 } as const;
 
 /** What a queue run accomplished, reported by kind. */
 export type QueueResult = {
@@ -233,11 +239,16 @@ type Ctx = {
   saveKey: (provider: Provider, apiKey: string) => Promise<void>;
   /** Root domain the published demos hang off, e.g. "demos.minhaagencia.com". */
   setPublishDomain: (domain: string) => Promise<void>;
+  githubRepository: string | undefined;
+  setGithubRepository: (repository: string) => Promise<void>;
   removeKey: (provider: Provider) => Promise<void>;
 
   prospect: (niche: string, location: string, filters: Filters) => Promise<Lead[]>;
   buildSite: (id: string) => Promise<void>;
   publishSite: (id: string) => Promise<string>;
+  publishGithubSite: (id: string) => Promise<string>;
+  buildDiagnostic: (id: string) => Promise<void>;
+  publishDiagnostic: (id: string) => Promise<string>;
   writeMessage: (
     id: string,
     tone: "Direta" | "Consultiva" | "Casual",
@@ -468,6 +479,9 @@ export function StoreProvider({ children }: { children: ReactNode }) {
       refresh,
       keyFor,
       llmProvider,
+      githubRepository: state.integrations.find((i) => i.provider === "github")?.meta[
+        "repository"
+      ] as string | undefined,
 
       saveKey: async (provider, apiKey) => {
         if (!uid) throw new Error("Faça login primeiro.");
@@ -488,6 +502,18 @@ export function StoreProvider({ children }: { children: ReactNode }) {
         setState((st) => ({
           ...st,
           integrations: st.integrations.map((i) => (i.provider === "netlify" ? { ...i, meta } : i)),
+        }));
+      },
+
+      setGithubRepository: async (repository) => {
+        if (!uid) throw new Error("Faça login primeiro.");
+        const current = state.integrations.find((i) => i.provider === "github");
+        await db.saveIntegrationMeta(uid, "github", { ...(current?.meta ?? {}), repository });
+        setState((st) => ({
+          ...st,
+          integrations: st.integrations.map((i) =>
+            i.provider === "github" ? { ...i, meta: { ...i.meta, repository } } : i,
+          ),
         }));
       },
 
@@ -614,6 +640,32 @@ export function StoreProvider({ children }: { children: ReactNode }) {
         return result.url;
       },
 
+      publishGithubSite: async (id) => {
+        const lead = requireLead(id);
+        if (!lead.site) throw new Error("Gere o site antes de publicar.");
+        const token = keyFor("github");
+        const repository = state.integrations.find((i) => i.provider === "github")?.meta[
+          "repository"
+        ] as string | undefined;
+        if (!token) throw new Error("Conecte o GitHub em Configurações.");
+        if (!repository) throw new Error("Selecione um repositório GitHub em Configurações.");
+
+        const result = await publishGithubFile({
+          data: {
+            token,
+            repository,
+            file: {
+              path: "index.html",
+              content: lead.site.html,
+              message: `Publica site de ${lead.name}`,
+            },
+          },
+        });
+        const activities = await db.appendActivity(lead, `Site enviado para GitHub: ${repository}`);
+        patchLocalLead(id, { activities });
+        return result.url;
+      },
+
       writeMessage: async (id, tone, channel) => {
         if (!uid) throw new Error("Faça login primeiro.");
         const lead = requireLead(id);
@@ -653,6 +705,76 @@ export function StoreProvider({ children }: { children: ReactNode }) {
         );
         patchLocalLead(id, { siteAudit: audit, activities });
         return audit;
+      },
+
+      buildDiagnostic: async (id) => {
+        if (!uid) throw new Error("Faça login primeiro.");
+        const lead = requireLead(id);
+        const { provider, apiKey } = requireLlm();
+
+        // Reusa o slug na regeneração, do mesmo jeito que o site faz — o
+        // beacon de visita continua reportando sob a mesma chave.
+        const slug = lead.diagnostic?.slug ?? `diagnostico-${slugify(lead.name)}-${lead.id.slice(0, 6)}`;
+
+        const siteAudit = lead.website
+          ? (lead.siteAudit ??
+            (await auditSite({ data: { url: lead.website, apiKey: keyFor("google") } })))
+          : undefined;
+        const gmb = computeGmbAudit(lead);
+        const findings: DiagnosticFindings = { site: siteAudit, gmb };
+
+        const generated = await generateDiagnostic({ data: { provider, apiKey, lead, findings } });
+        const overallScore = computeDiagnosticScore(findings);
+        const content: DiagnosticContent = { findings, overallScore, ...generated };
+        const html = renderDiagnosticHtml(lead, content, { slug, trackUrl: appOrigin() });
+
+        const diagnostic = await db.upsertDiagnostic(uid, id, { content, html, slug });
+
+        const activities = await db.appendActivity(lead, "Diagnóstico de marketing gerado pela IA");
+        const credits = await db.spendCredits(COST.diagnostic);
+
+        // Um audit de PageSpeed rodado agora vale a pena guardar no lead
+        // também — a mesma nota fica disponível fora do diagnóstico.
+        if (siteAudit && !lead.siteAudit) await db.patchLead(id, { siteAudit });
+
+        patchLocalLead(id, {
+          diagnostic,
+          activities,
+          ...(siteAudit && !lead.siteAudit ? { siteAudit } : {}),
+        });
+        setState((s) => ({ ...s, credits }));
+      },
+
+      publishDiagnostic: async (id) => {
+        const lead = requireLead(id);
+        if (!lead.diagnostic) throw new Error("Gere o diagnóstico antes de publicar.");
+        const apiKey = keyFor("netlify");
+        if (!apiKey) throw new Error("Configure seu token do Netlify em Configurações.");
+
+        const result = await publishToNetlify({
+          data: {
+            apiKey,
+            slug: lead.diagnostic.slug,
+            html: lead.diagnostic.html,
+            siteId: lead.diagnostic.netlifySiteId,
+          },
+        });
+
+        await db.markDiagnosticPublished(id, result.url, {
+          netlifySiteId: result.siteId,
+          deployId: result.deployId,
+        });
+        const activities = await db.appendActivity(lead, `Diagnóstico publicado em ${result.url}`);
+        patchLocalLead(id, {
+          diagnostic: {
+            ...lead.diagnostic,
+            published: true,
+            url: result.url,
+            netlifySiteId: result.siteId,
+          },
+          activities,
+        });
+        return result.url;
       },
 
       whatsapp,
