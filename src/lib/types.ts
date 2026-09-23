@@ -161,6 +161,41 @@ export type LeadSite = {
   createdAt: string;
 };
 
+export type GmbAudit = {
+  hasCategory: boolean;
+  hasPhotos: boolean;
+  photoCount: number;
+  hasPhone: boolean;
+  hasInstagram: boolean;
+  /** 0-100, proporção dos quatro sinais acima que estão presentes. */
+  completeness: number;
+};
+
+export type DiagnosticFindings = {
+  /** Ausente quando o lead não tem site — a própria ausência já é um achado. */
+  site?: SiteAudit | undefined;
+  gmb: GmbAudit;
+};
+
+export type DiagnosticContent = {
+  findings: DiagnosticFindings;
+  /** 0-100, quanto maior melhor — mesma leitura de SiteAudit.performance. */
+  overallScore: number;
+  summary: string;
+  recommendations: string[];
+};
+
+export type LeadDiagnostic = {
+  id?: string | undefined;
+  content: DiagnosticContent;
+  html: string;
+  slug: string;
+  published: boolean;
+  url?: string | undefined;
+  netlifySiteId?: string | undefined;
+  createdAt: string;
+};
+
 export type Lead = {
   id: string;
   name: string;
@@ -183,6 +218,8 @@ export type Lead = {
   stage: Stage;
   campaignId?: string | undefined;
   site?: LeadSite | undefined;
+  /** Diagnóstico de presença digital, quando o playbook da conta é marketing. */
+  diagnostic?: LeadDiagnostic | undefined;
   message?: { tone: string; channel: string; text: string } | undefined;
   createdAt: string;
   activities: { at: string; text: string }[];
@@ -349,7 +386,8 @@ export type Profile = {
 /*  Integrations — the user plugs in their own API keys                        */
 /* -------------------------------------------------------------------------- */
 
-export type Provider = "apify" | "anthropic" | "openai" | "netlify" | "google" | "whatsapp";
+export type Provider =
+  "apify" | "anthropic" | "openai" | "netlify" | "google" | "whatsapp" | "github";
 
 /**
  * The user's own WhatsApp instance. We never operate a number on their behalf:
@@ -426,6 +464,13 @@ export const PROVIDER_INFO: Record<
     help: "Aumenta o limite da análise do site atual do lead. Sem chave funciona, só com cota menor.",
     url: "https://developers.google.com/speed/docs/insights/v5/get-started",
     placeholder: "AIza...",
+    required: false,
+  },
+  github: {
+    label: "GitHub",
+    help: "Cria repositórios e publica os sites gerados diretamente na sua conta GitHub.",
+    url: "https://github.com/settings/apps",
+    placeholder: "Conecte pelo OAuth",
     required: false,
   },
   whatsapp: {
