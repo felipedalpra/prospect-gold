@@ -1,5 +1,13 @@
 import { createServerFn } from "@tanstack/react-start";
-import type { Lead, LlmProvider, SiteBlock, SiteLayout, SiteSection, SiteVariant } from "../types";
+import type {
+  DiagnosticFindings,
+  Lead,
+  LlmProvider,
+  SiteBlock,
+  SiteLayout,
+  SiteSection,
+  SiteVariant,
+} from "../types";
 import { SITE_BLOCK_KINDS, SITE_LAYOUTS, SITE_TYPEFACES } from "../types";
 import { renderSiteHtml } from "../site-renderer";
 import { fetchPlaceImages } from "./apify";
@@ -361,4 +369,73 @@ export const generateMessage = createServerFn({ method: "POST" })
       ].join("\n\n"),
     });
     return text.trim();
+  });
+
+/* -------------------------------------------------------------------------- */
+/*  Marketing diagnostic                                                      */
+/* -------------------------------------------------------------------------- */
+
+const DIAGNOSTIC_SYSTEM = `Você é um consultor de marketing digital que audita a presença online de pequenos negócios brasileiros a partir de dados reais (Google Maps, PageSpeed).
+
+Você recebe os achados técnicos de um negócio e escreve um diagnóstico curto e direto, sempre baseado SOMENTE nos dados fornecidos — nunca invente números.
+
+Responda SEMPRE com um único objeto JSON válido, sem texto antes ou depois, sem cercas de código:
+{
+  "summary": "2 a 3 frases resumindo o estado da presença digital deste negócio, em tom consultivo",
+  "recommendations": ["até 5 recomendações curtas e específicas, cada uma acionável em uma frase"]
+}
+
+Regras:
+- Português do Brasil.
+- Cite os números reais recebidos (nota do PageSpeed, se o Instagram existe, etc.) na "summary".
+- Cada recomendação é uma ação concreta, não um conselho genérico ("melhore seu site" é ruim; "reduza o tempo de carregamento da página inicial, hoje em X segundos" é bom).
+- Nunca invente dados que não foram fornecidos.
+- No máximo 5 recomendações, no mínimo 2.
+- Não gere HTML nem markdown. Retorne somente o JSON especificado.`;
+
+export type GenerateDiagnosticInput = {
+  provider: LlmProvider;
+  apiKey: string;
+  lead: Lead;
+  findings: DiagnosticFindings;
+};
+
+export type GeneratedDiagnostic = { summary: string; recommendations: string[] };
+
+function findingsBrief(findings: DiagnosticFindings): string {
+  const siteLine = findings.site
+    ? `Site: nota de performance ${findings.site.performance}/100 no PageSpeed, carregamento (LCP) ${findings.site.lcp}s, ${findings.site.mobile ? "responsivo" : "NÃO responsivo"}, ${findings.site.https ? "HTTPS ok" : "SEM HTTPS"}.`
+    : "Site: este negócio não tem site.";
+  const gmbLine = `Perfil no Google: categoria ${findings.gmb.hasCategory ? "preenchida" : "ausente"}, ${findings.gmb.photoCount} foto(s) publicada(s), ${findings.gmb.hasPhone ? "telefone público" : "sem telefone público"}, ${findings.gmb.hasInstagram ? "Instagram vinculado" : "sem Instagram vinculado"}. Completude do perfil: ${findings.gmb.completeness}/100.`;
+  return [siteLine, gmbLine].join("\n");
+}
+
+export const generateDiagnostic = createServerFn({ method: "POST" })
+  .validator((d: GenerateDiagnosticInput) => d)
+  .handler(async ({ data }): Promise<GeneratedDiagnostic> => {
+    const raw = await callLlm({
+      provider: data.provider,
+      apiKey: data.apiKey,
+      system: DIAGNOSTIC_SYSTEM,
+      maxTokens: 2000,
+      prompt: `Escreva o diagnóstico de presença digital deste negócio.\n\n${leadBrief(data.lead)}\n\nAchados técnicos:\n${findingsBrief(data.findings)}`,
+    });
+
+    let parsed: { summary?: unknown; recommendations?: unknown };
+    try {
+      parsed = JSON.parse(stripFences(raw)) as typeof parsed;
+    } catch {
+      throw new Error("A IA devolveu uma resposta que não pôde ser lida. Tente gerar novamente.");
+    }
+
+    if (typeof parsed.summary !== "string" || !Array.isArray(parsed.recommendations)) {
+      throw new Error("A IA não devolveu um diagnóstico válido. Tente gerar novamente.");
+    }
+
+    return {
+      summary: parsed.summary,
+      recommendations: parsed.recommendations
+        .filter((r): r is string => typeof r === "string")
+        .slice(0, 5),
+    };
   });
