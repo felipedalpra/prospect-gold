@@ -2,10 +2,12 @@ import { supabase } from "./supabase";
 import type {
   Alert,
   Campaign,
+  DiagnosticContent,
   Enrichment,
   Enrollment,
   Integration,
   Lead,
+  LeadDiagnostic,
   LeadSite,
   OutreachMessage,
   Profile,
@@ -60,13 +62,14 @@ type SiteRow = {
   lead_id: string;
   slug: string;
   template: string;
-  content: SiteSection;
+  content: SiteSection | DiagnosticContent;
   html: string;
   published: boolean;
   url: string | null;
   variants: SiteVariant[] | null;
   deploy_meta: Record<string, unknown>;
   created_at: string;
+  kind: "site" | "diagnostic";
 };
 
 /* -------------------------------------------------------------------------- */
@@ -77,7 +80,7 @@ function toSite(row: SiteRow): LeadSite {
   return {
     id: row.id,
     template: row.template,
-    content: row.content,
+    content: row.content as SiteSection,
     html: row.html,
     slug: row.slug,
     published: row.published,
@@ -88,7 +91,24 @@ function toSite(row: SiteRow): LeadSite {
   };
 }
 
-function toLead(row: LeadRow, site?: SiteRow | undefined): Lead {
+function toDiagnostic(row: SiteRow): LeadDiagnostic {
+  return {
+    id: row.id,
+    content: row.content as DiagnosticContent,
+    html: row.html,
+    slug: row.slug,
+    published: row.published,
+    url: row.url ?? undefined,
+    netlifySiteId: (row.deploy_meta?.["netlifySiteId"] as string | undefined) ?? undefined,
+    createdAt: row.created_at,
+  };
+}
+
+function toLead(
+  row: LeadRow,
+  site?: SiteRow | undefined,
+  diagnosticRow?: SiteRow | undefined,
+): Lead {
   return {
     id: row.id,
     name: row.name,
@@ -110,6 +130,7 @@ function toLead(row: LeadRow, site?: SiteRow | undefined): Lead {
     stage: row.stage as Stage,
     campaignId: row.campaign_id ?? undefined,
     site: site ? toSite(site) : undefined,
+    diagnostic: diagnosticRow ? toDiagnostic(diagnosticRow) : undefined,
     message: row.message ?? undefined,
     createdAt: row.created_at,
     activities: row.activities ?? [],
@@ -180,8 +201,14 @@ export async function fetchLeads(): Promise<Lead[]> {
   if (error) throw error;
   if (siteError) throw siteError;
 
-  const byLead = new Map((sites as SiteRow[] | null)?.map((s) => [s.lead_id, s]) ?? []);
-  return ((leads as LeadRow[] | null) ?? []).map((row) => toLead(row, byLead.get(row.id)));
+  const rows = (sites as SiteRow[] | null) ?? [];
+  const siteByLead = new Map(rows.filter((s) => s.kind === "site").map((s) => [s.lead_id, s]));
+  const diagnosticByLead = new Map(
+    rows.filter((s) => s.kind === "diagnostic").map((s) => [s.lead_id, s]),
+  );
+  return ((leads as LeadRow[] | null) ?? []).map((row) =>
+    toLead(row, siteByLead.get(row.id), diagnosticByLead.get(row.id)),
+  );
 }
 
 export async function fetchCampaigns(): Promise<Campaign[]> {
@@ -380,13 +407,14 @@ export async function upsertSite(
       {
         user_id: userId,
         lead_id: leadId,
+        kind: "site",
         slug: site.slug,
         template: site.template,
         content: site.content,
         html: site.html,
         ...(site.variants ? { variants: site.variants } : {}),
       },
-      { onConflict: "lead_id" },
+      { onConflict: "lead_id,kind" },
     )
     .select("*")
     .single();
@@ -402,14 +430,57 @@ export async function markSitePublished(
   const { error } = await supabase
     .from("sites")
     .update({ published: true, url, deploy_meta: deployMeta })
-    .eq("lead_id", leadId);
+    .eq("lead_id", leadId)
+    .eq("kind", "site");
   if (error) throw error;
 }
 
 export async function patchSiteContent(leadId: string, content: SiteSection, html?: string) {
   const payload: Record<string, unknown> = { content };
   if (html !== undefined) payload["html"] = html;
-  const { error } = await supabase.from("sites").update(payload).eq("lead_id", leadId);
+  const { error } = await supabase
+    .from("sites")
+    .update(payload)
+    .eq("lead_id", leadId)
+    .eq("kind", "site");
+  if (error) throw error;
+}
+
+export async function upsertDiagnostic(
+  userId: string,
+  leadId: string,
+  diagnostic: { content: DiagnosticContent; html: string; slug: string },
+): Promise<LeadDiagnostic> {
+  const { data, error } = await supabase
+    .from("sites")
+    .upsert(
+      {
+        user_id: userId,
+        lead_id: leadId,
+        kind: "diagnostic",
+        slug: diagnostic.slug,
+        template: "diagnostico-marketing",
+        content: diagnostic.content,
+        html: diagnostic.html,
+      },
+      { onConflict: "lead_id,kind" },
+    )
+    .select("*")
+    .single();
+  if (error) throw error;
+  return toDiagnostic(data as SiteRow);
+}
+
+export async function markDiagnosticPublished(
+  leadId: string,
+  url: string,
+  deployMeta: Record<string, unknown>,
+): Promise<void> {
+  const { error } = await supabase
+    .from("sites")
+    .update({ published: true, url, deploy_meta: deployMeta })
+    .eq("lead_id", leadId)
+    .eq("kind", "diagnostic");
   if (error) throw error;
 }
 
